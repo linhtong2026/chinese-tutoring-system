@@ -1,74 +1,150 @@
 from flask import Blueprint, jsonify, request
-from models import db, Session, User
+from models import db, Session, User, Availability, Tutor
 from auth import require_auth
 from datetime import datetime
 
 session_bp = Blueprint('session', __name__)
 
 
-@session_bp.route("/api/sessions", methods=["POST"])
+@session_bp.route("/api/sessions/book", methods=["POST"])
 @require_auth
-def create_session():
-    data = request.get_json()
-    
-    tutor_id = data.get("tutor_id")
-    if not tutor_id:
-        return jsonify({"error": "tutor_id is required"}), 400
-    
-    tutor = User.query.get(tutor_id)
-    if not tutor:
-        return jsonify({"error": "Tutor not found"}), 404
-    
-    student_id = data.get("student_id")
-    course = data.get("course")
-    session_type = data.get("session_type")
+def book_session():
+    data = request.get_json() or {}
+
+    # Only students can book
+    current_user: User = getattr(request, 'db_user', None)
+    if not current_user or current_user.role != 'student':
+        return jsonify({"error": "Forbidden"}), 403
+
+    availability_id = data.get("availability_id")
     start_time_str = data.get("start_time")
     end_time_str = data.get("end_time")
-    status = data.get("status", "available")
-    
-    if not session_type or not start_time_str or not end_time_str:
-        return jsonify({"error": "session_type, start_time, and end_time are required"}), 400
-    
-    if student_id:
-        student = User.query.get(student_id)
-        if not student:
-            return jsonify({"error": "Student not found"}), 404
-    
+    course = data.get("course")
+
+    if not availability_id or not start_time_str or not end_time_str:
+        return jsonify({"error": "availability_id, start_time, end_time are required"}), 400
+
+    availability = Availability.query.get(availability_id)
+    if not availability:
+        return jsonify({"error": "Availability not found"}), 404
+
     try:
         start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
         end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
     except ValueError:
         return jsonify({"error": "Invalid datetime format"}), 400
-    
+
     if end_time <= start_time:
         return jsonify({"error": "end_time must be after start_time"}), 400
-    
-    overlapping_session = Session.query.filter(
-        Session.tutor_id == tutor_id,
+
+    # Ensure requested window is within availability window
+    if not (availability.start_time <= start_time and end_time <= availability.end_time):
+        return jsonify({"error": "Requested time outside availability window"}), 409
+
+    # Find the tutor's user_id from Availability -> Tutor -> User
+    tutor_profile: Tutor = availability.tutor
+    if not tutor_profile or not tutor_profile.user_id:
+        return jsonify({"error": "Tutor profile misconfigured"}), 500
+    tutor_user_id = tutor_profile.user_id
+
+    # Ensure no overlapping session exists for the tutor in that window
+    overlap = Session.query.filter(
+        Session.tutor_id == tutor_user_id,
         Session.start_time < end_time,
         Session.end_time > start_time
     ).first()
-    
-    if overlapping_session:
-        return jsonify({
-            "error": "Tutor already has a session at this time",
-            "conflicting_session_id": overlapping_session.id
-        }), 409
-    
-    session = Session(
-        tutor_id=tutor_id,
-        student_id=student_id,
+    if overlap:
+        return jsonify({"error": "Tutor already has a session at this time"}), 409
+
+    # Create the session (only created when a student books)
+    new_session = Session(
+        tutor_id=tutor_user_id,
+        student_id=current_user.id,
         course=course,
-        session_type=session_type,
+        session_type=availability.session_type,
         start_time=start_time,
         end_time=end_time,
-        status=status
+        status='booked'
     )
-    
-    db.session.add(session)
+    db.session.add(new_session)
+
+    # Adjust the availability: shrink or split around the booked window
+    av_start = availability.start_time
+    av_end = availability.end_time
+
+    left_remains = av_start < start_time
+    right_remains = end_time < av_end
+
+    if left_remains and right_remains:
+        # Split into two availability blocks
+        availability.end_time = start_time
+        new_av = Availability(
+            tutor_id=availability.tutor_id,
+            day_of_week=availability.day_of_week,
+            start_time=end_time,
+            end_time=av_end,
+            session_type=availability.session_type,
+            is_recurring=availability.is_recurring
+        )
+        db.session.add(new_av)
+    elif left_remains and not right_remains:
+        # Keep left part
+        availability.end_time = start_time
+    elif right_remains and not left_remains:
+        # Keep right part
+        availability.start_time = end_time
+    else:
+        # Booking consumed the whole availability
+        db.session.delete(availability)
+
     db.session.commit()
-    
-    return jsonify({"success": True, "session": session.to_dict()}), 201
+    return jsonify({"session": new_session.to_dict()}), 201
+
+
+@session_bp.route("/api/tutor/sessions", methods=["GET"])
+@require_auth
+def tutor_list_sessions():
+    current_user: User = getattr(request, 'db_user', None)
+    if not current_user or current_user.role != 'tutor':
+        return jsonify({"error": "Forbidden"}), 403
+
+    statuses = request.args.get("status")  # e.g. "available,booked"
+    dt_from = request.args.get("from")
+    dt_to = request.args.get("to")
+
+    q = Session.query.filter(Session.tutor_id == current_user.id)
+    if statuses:
+        allowed = [s.strip() for s in statuses.split(',') if s.strip()]
+        if allowed:
+            q = q.filter(Session.status.in_(allowed))
+
+    def parse_dt(s):
+        try:
+            return datetime.fromisoformat(s.replace('Z', '+00:00')) if s else None
+        except Exception:
+            return None
+
+    p_from = parse_dt(dt_from)
+    p_to = parse_dt(dt_to)
+    if p_from:
+        q = q.filter(Session.start_time >= p_from)
+    if p_to:
+        q = q.filter(Session.end_time <= p_to)
+
+    sessions = q.order_by(Session.start_time.asc()).all()
+    return jsonify({"sessions": [s.to_dict() for s in sessions]})
+
+
+@session_bp.route("/api/student/sessions", methods=["GET"])
+@require_auth
+def student_my_sessions():
+    current_user: User = getattr(request, 'db_user', None)
+    if not current_user or current_user.role != 'student':
+        return jsonify({"error": "Forbidden"}), 403
+
+    q = Session.query.filter(Session.student_id == current_user.id)
+    sessions = q.order_by(Session.start_time.asc()).all()
+    return jsonify({"sessions": [s.to_dict() for s in sessions]})
 
 
 @session_bp.route("/api/sessions", methods=["GET"])

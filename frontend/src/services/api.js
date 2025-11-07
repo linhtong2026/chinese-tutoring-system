@@ -28,9 +28,10 @@ class ApiService {
     return response
   }
 
-  async getSessions(getToken, tutorId) {
+  async getTutorSessions(getToken, params = {}) {
     const headers = await this.getAuthHeaders(getToken)
-    const url = tutorId ? `${API_URL}/api/sessions?tutor_id=${tutorId}` : `${API_URL}/api/sessions`
+    const queryParams = new URLSearchParams(params).toString()
+    const url = `${API_URL}/api/tutor/sessions${queryParams ? `?${queryParams}` : ''}`
     const response = await fetch(url, {
       method: 'GET',
       headers
@@ -38,31 +39,11 @@ class ApiService {
     return response
   }
 
-  async getTutorByUser(getToken, userId) {
+  async getStudentSessions(getToken) {
     const headers = await this.getAuthHeaders(getToken)
-    const response = await fetch(`${API_URL}/api/tutor/by-user/${userId}`, {
+    const response = await fetch(`${API_URL}/api/student/sessions`, {
       method: 'GET',
       headers
-    })
-    return response
-  }
-
-  async getAvailability(getToken, tutorId) {
-    const headers = await this.getAuthHeaders(getToken)
-    const url = tutorId ? `${API_URL}/api/availability?tutor_id=${tutorId}` : `${API_URL}/api/availability`
-    const response = await fetch(url, {
-      method: 'GET',
-      headers
-    })
-    return response
-  }
-
-  async createAvailability(getToken, data) {
-    const headers = await this.getAuthHeaders(getToken)
-    const response = await fetch(`${API_URL}/api/availability`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data)
     })
     return response
   }

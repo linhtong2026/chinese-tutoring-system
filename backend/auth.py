@@ -8,6 +8,10 @@ from models import db, User
 def require_auth(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Skip authentication for OPTIONS requests (CORS preflight)
+        if request.method == 'OPTIONS':
+            return f(*args, **kwargs)
+        
         sdk = Clerk(bearer_auth=os.environ.get('CLERK_SECRET_KEY'))
         
         try:
@@ -29,10 +33,6 @@ def require_auth(f):
             
             return f(*args, **kwargs)
         except Exception as e:
-            print(f"[DEBUG] Auth error: {e}")
-            import traceback
-            traceback.print_exc()
             return jsonify({'error': 'Unauthorized'}), 401
     
     return decorated_function
-

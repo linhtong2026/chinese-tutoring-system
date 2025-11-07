@@ -11,13 +11,19 @@ availability_bp = Blueprint('availability', __name__)
 def create_availability():
     data = request.get_json()
     
-    tutor_id = data.get("tutor_id")
-    if not tutor_id:
-        return jsonify({"error": "tutor_id is required"}), 400
+    # Create availability for the authenticated tutor user.
+    db_user = getattr(request, 'db_user', None)
+    if not db_user:
+        return jsonify({"error": "Unauthorized"}), 401
+    if db_user.role != 'tutor':
+        return jsonify({"error": "Forbidden"}), 403
     
-    tutor = Tutor.query.get(tutor_id)
+    # Ensure a Tutor profile exists for this user (1:1); create if missing.
+    tutor = Tutor.query.filter_by(user_id=db_user.id).first()
     if not tutor:
-        return jsonify({"error": "Tutor not found"}), 404
+        tutor = Tutor(user_id=db_user.id)
+        db.session.add(tutor)
+        db.session.flush()  # obtain tutor.id without committing yet
     
     day_of_week = data.get("day_of_week")
     start_time_str = data.get("start_time")
@@ -38,7 +44,7 @@ def create_availability():
         return jsonify({"error": "Invalid datetime format"}), 400
     
     availability = Availability(
-        tutor_id=tutor_id,
+        tutor_id=tutor.id,
         day_of_week=day_of_week,
         start_time=start_time,
         end_time=end_time,
@@ -53,15 +59,20 @@ def create_availability():
 
 
 @availability_bp.route("/api/availability", methods=["GET"])
-@require_auth
+# @require_auth
 def get_availability():
-    tutor_id = request.args.get("tutor_id")
+    tutor_id = request.args.get("tutor_id")  # legacy: Tutor.id
+    user_id = request.args.get("user_id")    # preferred: Users.id
     
-    if tutor_id:
+    if user_id:
+        tutor = Tutor.query.filter_by(user_id=user_id).first()
+        if not tutor:
+            return jsonify({"error": "Tutor not found"}), 404
+        availabilities = tutor.availabilities.all()
+    elif tutor_id:
         tutor = Tutor.query.get(tutor_id)
         if not tutor:
             return jsonify({"error": "Tutor not found"}), 404
-        
         availabilities = tutor.availabilities.all()
     else:
         availabilities = Availability.query.all()

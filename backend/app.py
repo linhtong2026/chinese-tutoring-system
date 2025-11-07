@@ -7,6 +7,10 @@ from routes.availability import availability_bp
 from routes.sessions import session_bp
 import requests
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from sqlalchemy import and_
+from models import db, User, Session, Feedback
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -36,6 +40,64 @@ def update_clerk_metadata(clerk_user_id, metadata):
     except Exception:
         return False
 
+NY_TZ = ZoneInfo("America/New_York")
+UTC = ZoneInfo("UTC")
+
+def parse_client_dt(s: str) -> datetime:
+    """Accept ISO from client (naive => America/New_York). Store UTC."""
+    if not s:
+        raise ValueError("Missing datetime")
+    dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=NY_TZ)
+    return dt.astimezone(UTC)
+
+def to_client_iso(dt: datetime) -> str:
+    return dt.astimezone(NY_TZ).isoformat() if dt else None
+
+def role_required(role: str):
+    from functools import wraps
+    def decorator(fn):
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            db_user: User = getattr(request, "db_user", None)
+            if not db_user:
+                return jsonify({"error": "Unauthorized"}), 401
+            if db_user.role != role:
+                return jsonify({"error": "Forbidden"}), 403
+            return fn(*args, **kwargs)
+        return wrapped
+    return decorator
+
+def session_to_dict(s: Session, include_people=True):
+    data = s.to_dict()
+    data["start_time"] = to_client_iso(s.start_time)
+    data["end_time"] = to_client_iso(s.end_time)
+    if include_people:
+        data["tutor"] = {
+            "id": s.tutor_id,
+            "name": s.tutor_user.name if s.tutor_user else None,
+            "email": s.tutor_user.email if s.tutor_user else None,
+        }
+        data["student"] = (
+            {
+                "id": s.student_id,
+                "name": s.student_user.name if s.student_user else None,
+                "email": s.student_user.email if s.student_user else None,
+            } if s.student_id else None
+        )
+    data["booked"] = (s.status == "booked")
+    return data
+
+def tutor_overlap_exists(tutor_id: int, start_utc: datetime, end_utc: datetime, exclude_id: int = None) -> bool:
+    q = Session.query.filter(
+        Session.tutor_id == tutor_id,
+        Session.status.in_(["available", "booked"]),
+        and_(Session.start_time < end_utc, Session.end_time > start_utc)
+    )
+    if exclude_id:
+        q = q.filter(Session.id != exclude_id)
+    return db.session.query(q.exists()).scalar()
 
 @app.route("/api/health")
 def health():
@@ -118,28 +180,9 @@ def update_profile():
     return jsonify({"success": True, "user": db_user.to_dict()})
 
 
-@app.route("/api/tutor/by-user/<int:user_id>")
-@require_auth
-def get_tutor_by_user(user_id):
-    from models import User
-    
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-    
-    if user.role != "tutor":
-        return jsonify({"error": "User is not a tutor"}), 400
-    
-    tutor = Tutor.query.filter_by(user_id=user_id).first()
-    if not tutor:
-        tutor = Tutor(user_id=user_id)
-        db.session.add(tutor)
-        db.session.commit()
-    
-    return jsonify({"success": True, "tutor": tutor.to_dict()})
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True, port=5001)
