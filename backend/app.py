@@ -259,11 +259,15 @@ def tutor_update_session(session_id):
     if "course" in data: s.course = data["course"]
     if "session_type" in data: s.session_type = data["session_type"]
     if "status" in data:
-        if data["status"] not in ["available", "booked", "completed", "canceled"]:
+        new_status = data["status"]
+        if new_status not in ["available", "booked", "completed", "canceled"]:
             return jsonify({"error": "Invalid status"}), 400
-        s.status = data["status"]
+        if new_status == "booked" and s.student_id is None:
+            return jsonify({"error": "Cannot set booked without a student"}), 400
+        s.status = new_status
         if s.status != "booked":
-            s.student_id = None  # re-open slot if not booked
+            s.student_id = None
+
 
     db.session.commit()
     return jsonify({"session": session_to_dict(s)})
@@ -321,6 +325,8 @@ def list_available_sessions():
 @app.route("/api/sessions/book", methods=["POST"])
 @require_auth
 @role_required("student")
+@require_auth
+@role_required("student")
 def book_session():
     user: User = request.db_user
     data = request.get_json() or {}
@@ -328,14 +334,20 @@ def book_session():
     if not session_id:
         return jsonify({"error": "session_id is required"}), 400
 
-    s: Session = Session.query.get(session_id)
-    if not s or s.status != "available":
+    rows = (Session.query
+        .filter(Session.id == session_id, Session.status == "available")
+        .update({
+            Session.student_id: user.id,
+            Session.status: "booked",
+            Session.updated_at: datetime.utcnow()
+        }, synchronize_session=False))
+    if rows == 0:
         return jsonify({"error": "Session not available"}), 409
 
-    s.student_id = user.id
-    s.status = "booked"
     db.session.commit()
+    s = db.session.get(Session, session_id)
     return jsonify({"session": session_to_dict(s)})
+
 
 @app.route("/api/sessions/<int:session_id>", methods=["PATCH"])
 @require_auth
