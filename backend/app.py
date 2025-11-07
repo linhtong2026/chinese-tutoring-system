@@ -99,11 +99,6 @@ def tutor_overlap_exists(tutor_id: int, start_utc: datetime, end_utc: datetime, 
         q = q.filter(Session.id != exclude_id)
     return db.session.query(q.exists()).scalar()
 
-
-@app.route('/api/health')
-def health():
-    return {'status': 'ok'}
-
 @app.route("/api/health")
 def health():
     return {"status": "ok"}
