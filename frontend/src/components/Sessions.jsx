@@ -391,6 +391,46 @@ function Sessions({ userData }) {
       }
     })
     
+    sessions.forEach(session => {
+      if (!session.start_time) return
+      
+      const sessionTimeMatch = session.start_time.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):\d{2}/)
+      if (!sessionTimeMatch) return
+      
+      const [, sYear, sMonth, sDay, sHour, sMin] = sessionTimeMatch.map(Number)
+      const sessionDateKey = `${sYear}-${String(sMonth).padStart(2, '0')}-${String(sDay).padStart(2, '0')}`
+      
+      if (sessionDateKey !== dateKey) return
+      
+      const alreadyInSlots = slots.some(slot => 
+        slot.session && slot.session.id === session.id
+      )
+      
+      if (!alreadyInSlots) {
+        const slotHour12 = sHour === 0 ? 12 : (sHour > 12 ? sHour - 12 : sHour)
+        const ampm = sHour >= 12 ? 'PM' : 'AM'
+        const slotTime = `${slotHour12}:${String(sMin).padStart(2, '0')} ${ampm}`
+        
+        const baseDate = new Date(date)
+        baseDate.setHours(sHour, sMin, 0, 0)
+        
+        slots.push({
+          id: `slot-session-${session.id}`,
+          time: slotTime,
+          timeSort: baseDate.getTime(),
+          type: session.session_type,
+          isAvailable: false,
+          availability: null,
+          slotIndex: 0,
+          session: {
+            id: session.id,
+            status: session.status,
+            type: session.session_type
+          }
+        })
+      }
+    })
+    
     slots.sort((a, b) => a.timeSort - b.timeSort)
     
     const slotMap = new Map()

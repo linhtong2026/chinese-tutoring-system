@@ -87,38 +87,7 @@ def book_session():
         status='booked'
     )
     db.session.add(new_session)
-
-    # For recurring availabilities, don't modify the availability - it represents a weekly pattern
-    # For non-recurring (one-time) availabilities, adjust or remove them
-    if not availability.is_recurring:
-        av_start = availability.start_time
-        av_end = availability.end_time
-
-        left_remains = av_start < start_time
-        right_remains = end_time < av_end
-
-        if left_remains and right_remains:
-            # Split into two availability blocks
-            availability.end_time = start_time
-            new_av = Availability(
-                tutor_id=availability.tutor_id,
-                day_of_week=availability.day_of_week,
-                start_time=end_time,
-                end_time=av_end,
-                session_type=availability.session_type,
-                is_recurring=availability.is_recurring
-            )
-            db.session.add(new_av)
-        elif left_remains and not right_remains:
-            # Keep left part
-            availability.end_time = start_time
-        elif right_remains and not left_remains:
-            # Keep right part
-            availability.start_time = end_time
-        else:
-            # Booking consumed the whole availability
-            db.session.delete(availability)
-
+    
     db.session.commit()
     return jsonify({"session": new_session.to_dict()}), 201
 
