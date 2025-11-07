@@ -40,6 +40,21 @@ def create_session():
     except ValueError:
         return jsonify({"error": "Invalid datetime format"}), 400
     
+    if end_time <= start_time:
+        return jsonify({"error": "end_time must be after start_time"}), 400
+    
+    overlapping_session = Session.query.filter(
+        Session.tutor_id == tutor_id,
+        Session.start_time < end_time,
+        Session.end_time > start_time
+    ).first()
+    
+    if overlapping_session:
+        return jsonify({
+            "error": "Tutor already has a session at this time",
+            "conflicting_session_id": overlapping_session.id
+        }), 409
+    
     session = Session(
         tutor_id=tutor_id,
         student_id=student_id,
