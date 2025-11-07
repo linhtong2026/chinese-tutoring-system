@@ -47,6 +47,45 @@ class ApiService {
     })
     return response
   }
+
+  async getTutorByUser(getToken, userId) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/tutor/by-user/${userId}`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async getSessions(getToken, tutorId) {
+    const headers = await this.getAuthHeaders(getToken)
+    const url = tutorId ? `${API_URL}/api/tutor/sessions?tutor_id=${tutorId}` : `${API_URL}/api/tutor/sessions`
+    const response = await fetch(url, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async getAvailability(getToken, tutorId) {
+    const headers = await this.getAuthHeaders(getToken)
+    const url = tutorId ? `${API_URL}/api/availability?tutor_id=${tutorId}` : `${API_URL}/api/availability`
+    const response = await fetch(url, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async createAvailability(getToken, data) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/availability`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data)
+    })
+    return response
+  }
 }
 
 export default new ApiService()
