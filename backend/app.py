@@ -3,6 +3,8 @@ from flask_cors import CORS
 from config import Config
 from models import db
 from auth import require_auth
+from routes.availability import availability_bp
+from routes.sessions import session_bp
 import requests
 import os
 
@@ -11,6 +13,9 @@ app.config.from_object(Config)
 CORS(app)
 
 db.init_app(app)
+
+app.register_blueprint(availability_bp)
+app.register_blueprint(session_bp)
 
 
 def update_clerk_metadata(clerk_user_id, metadata):
