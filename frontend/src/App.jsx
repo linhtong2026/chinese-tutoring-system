@@ -94,6 +94,14 @@ function App() {
           >
             {renderPageContent()}
           </Layout>
+        ) : userData?.role === 'student' ? (
+          <Layout 
+            currentPage={currentPage} 
+            onPageChange={setCurrentPage}
+            userData={userData}
+          >
+            {renderPageContent()}
+          </Layout>
         ) : (
           <div className="dashboard">
             <header className="dashboard-header">

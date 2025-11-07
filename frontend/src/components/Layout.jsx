@@ -17,11 +17,16 @@ function Layout({ children, currentPage, onPageChange, userData }) {
   const { user } = useUser()
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
-  const navigation = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'sessions', label: 'Sessions', icon: Calendar },
-    { id: 'history', label: 'History', icon: History },
-  ]
+  const navigation = userData?.role === 'student' 
+    ? [
+        { id: 'sessions', label: 'Availability', icon: Calendar },
+        { id: 'history', label: 'My Sessions', icon: History },
+      ]
+    : [
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'sessions', label: 'Sessions', icon: Calendar },
+        { id: 'history', label: 'History', icon: History },
+      ]
 
   return (
     <div className="flex h-screen bg-background">
