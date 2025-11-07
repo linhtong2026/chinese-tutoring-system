@@ -73,8 +73,9 @@ class Availability(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tutor_id = db.Column(db.Integer, db.ForeignKey('tutors.id', ondelete='CASCADE'), nullable=False)
     day_of_week = db.Column(db.Integer, nullable=False)
-    start_time = db.Column(db.Time, nullable=False)
-    end_time = db.Column(db.Time, nullable=False)
+    start_time = db.Column(db.DateTime, nullable=False)
+    end_time = db.Column(db.DateTime, nullable=False)
+    session_type = db.Column(db.String(20), nullable=False)
     is_recurring = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -83,8 +84,9 @@ class Availability(db.Model):
             'id': self.id,
             'tutor_id': self.tutor_id,
             'day_of_week': self.day_of_week,
-            'start_time': self.start_time.strftime('%H:%M:%S') if self.start_time else None,
-            'end_time': self.end_time.strftime('%H:%M:%S') if self.end_time else None,
+            'start_time': self.start_time.isoformat() if self.start_time else None,
+            'end_time': self.end_time.isoformat() if self.end_time else None,
+            'session_type': self.session_type,
             'is_recurring': self.is_recurring,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }

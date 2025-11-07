@@ -1,8 +1,10 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from config import Config
-from models import db
+from models import db, Tutor
 from auth import require_auth
+from routes.availability import availability_bp
+from routes.sessions import session_bp
 import requests
 import os
 
@@ -11,6 +13,9 @@ app.config.from_object(Config)
 CORS(app)
 
 db.init_app(app)
+
+app.register_blueprint(availability_bp)
+app.register_blueprint(session_bp)
 
 
 def update_clerk_metadata(clerk_user_id, metadata):
@@ -111,6 +116,27 @@ def update_profile():
     db.session.commit()
 
     return jsonify({"success": True, "user": db_user.to_dict()})
+
+
+@app.route("/api/tutor/by-user/<int:user_id>")
+@require_auth
+def get_tutor_by_user(user_id):
+    from models import User
+    
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    if user.role != "tutor":
+        return jsonify({"error": "User is not a tutor"}), 400
+    
+    tutor = Tutor.query.filter_by(user_id=user_id).first()
+    if not tutor:
+        tutor = Tutor(user_id=user_id)
+        db.session.add(tutor)
+        db.session.commit()
+    
+    return jsonify({"success": True, "tutor": tutor.to_dict()})
 
 
 if __name__ == "__main__":
