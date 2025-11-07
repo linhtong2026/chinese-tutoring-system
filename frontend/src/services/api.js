@@ -3,7 +3,6 @@ const API_URL = import.meta.env.VITE_API_URL
 class ApiService {
   async getAuthHeaders(getToken) {
     const token = await getToken()
-    console.log('JWT Token:', token)
     return {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
