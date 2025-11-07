@@ -55,11 +55,11 @@ function App() {
       case 'dashboard':
         return <div className="p-8">Dashboard page coming soon...</div>
       case 'sessions':
-        return <Sessions />
+        return <Sessions userData={userData} />
       case 'history':
         return <div className="p-8">History page coming soon...</div>
       default:
-        return <Sessions />
+        return <Sessions userData={userData} />
     }
   }
 

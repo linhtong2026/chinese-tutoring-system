@@ -22,10 +22,14 @@ def create_availability():
     day_of_week = data.get("day_of_week")
     start_time_str = data.get("start_time")
     end_time_str = data.get("end_time")
+    session_type = data.get("session_type")
     is_recurring = data.get("is_recurring", True)
     
-    if day_of_week is None or not start_time_str or not end_time_str:
-        return jsonify({"error": "day_of_week, start_time, and end_time are required"}), 400
+    if day_of_week is None or not start_time_str or not end_time_str or not session_type:
+        return jsonify({"error": "day_of_week, start_time, end_time, and session_type are required"}), 400
+    
+    if session_type not in ['online', 'in-person']:
+        return jsonify({"error": "session_type must be 'online' or 'in-person'"}), 400
     
     try:
         start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
@@ -38,6 +42,7 @@ def create_availability():
         day_of_week=day_of_week,
         start_time=start_time,
         end_time=end_time,
+        session_type=session_type,
         is_recurring=is_recurring
     )
     
@@ -96,6 +101,11 @@ def update_availability(availability_id):
             availability.end_time = datetime.fromisoformat(data["end_time"].replace('Z', '+00:00'))
         except ValueError:
             return jsonify({"error": "Invalid datetime format for end_time"}), 400
+    
+    if "session_type" in data:
+        if data["session_type"] not in ['online', 'in-person']:
+            return jsonify({"error": "session_type must be 'online' or 'in-person'"}), 400
+        availability.session_type = data["session_type"]
     
     if "is_recurring" in data:
         availability.is_recurring = data["is_recurring"]

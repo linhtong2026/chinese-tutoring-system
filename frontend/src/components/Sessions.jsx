@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useAuth } from '@clerk/clerk-react'
 import { Calendar, ChevronLeft, ChevronRight, Monitor, MapPin, Plus, CalendarIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -8,15 +9,21 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import api from '@/services/api'
 
-function Sessions() {
+function Sessions({ userData }) {
+  const { getToken } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [sessions, setSessions] = useState([])
+  const [availabilities, setAvailabilities] = useState([])
+  const [tutorId, setTutorId] = useState(null)
   const [formData, setFormData] = useState({
     date: '',
     dateNative: '', // For native date picker
     startTime: '',
     endTime: '',
+    sessionType: 'online',
     recurring: false
   })
 
@@ -47,109 +54,111 @@ function Sessions() {
 
   const weekDays = getWeekDays()
 
-  // Mock sessions data
-  const mockSessions = useMemo(() => {
-    const sessions = {}
-    
-    // Add some mock sessions for different days
-    // Monday - Available online session
-    if (weekDays[1]) {
-      const mondayKey = formatDateKey(weekDays[1])
-      sessions[mondayKey] = [
-        { id: 1, time: '10:00 AM', status: 'available', type: 'online' },
-        { id: 2, time: '2:00 PM', status: 'booked', type: 'online' },
-      ]
+  useEffect(() => {
+    const fetchTutorAndData = async () => {
+      if (!userData?.id) return
+      
+      try {
+        const tutorResponse = await api.getTutorByUser(getToken, userData.id)
+        if (tutorResponse.ok) {
+          const tutorData = await tutorResponse.json()
+          const tutor = tutorData.tutor
+          setTutorId(tutor.id)
+          
+          const [sessionsResponse, availabilityResponse] = await Promise.all([
+            api.getSessions(getToken, userData.id),
+            api.getAvailability(getToken, tutor.id)
+          ])
+          
+          if (sessionsResponse.ok) {
+            const sessionsData = await sessionsResponse.json()
+            setSessions(sessionsData.sessions || [])
+          }
+          
+          if (availabilityResponse.ok) {
+            const availabilityData = await availabilityResponse.json()
+            setAvailabilities(availabilityData.availabilities || [])
+          }
+        } else {
+          const errorData = await tutorResponse.json()
+          console.error('Error fetching tutor:', errorData)
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error)
+      }
     }
-    
-    // Wednesday - Available in-person and booked online
-    if (weekDays[3]) {
-      const wednesdayKey = formatDateKey(weekDays[3])
-      sessions[wednesdayKey] = [
-        { id: 3, time: '11:00 AM', status: 'available', type: 'in-person' },
-        { id: 4, time: '3:00 PM', status: 'booked', type: 'online' },
-      ]
-    }
-    
-    // Friday - Multiple sessions
-    if (weekDays[5]) {
-      const fridayKey = formatDateKey(weekDays[5])
-      sessions[fridayKey] = [
-        { id: 5, time: '9:00 AM', status: 'available', type: 'in-person' },
-        { id: 6, time: '1:00 PM', status: 'booked', type: 'in-person' },
-        { id: 7, time: '4:00 PM', status: 'available', type: 'online' },
-      ]
-    }
-    
-    return sessions
-  }, [weekDays])
+
+    fetchTutorAndData()
+  }, [userData?.id, getToken])
 
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
-  // Mock availability data (recurring and individual)
   const monthlyAvailability = useMemo(() => {
     const year = currentDate.getFullYear()
     const month = currentDate.getMonth()
-    
-    // Recurring availability (day of week, time range)
-    const recurring = [
-      { dayOfWeek: 1, dayName: 'Monday', startTime: '8:00 PM', endTime: '9:00 PM', type: 'online' },
-      { dayOfWeek: 3, dayName: 'Wednesday', startTime: '8:20 PM', endTime: '9:20 PM', type: 'in-person' },
-      { dayOfWeek: 5, dayName: 'Friday', startTime: '9:00 PM', endTime: '10:00 PM', type: 'online' },
-    ]
-
-    // Individual availability (specific dates)
-    const individual = [
-      { date: 5, startTime: '8:40 PM', endTime: '9:40 PM', type: 'online' },
-      { date: 12, startTime: '8:00 PM', endTime: '9:00 PM', type: 'in-person' },
-      { date: 20, startTime: '9:20 PM', endTime: '10:00 PM', type: 'online' },
-    ]
-
-    // Generate all availability entries for the month
     const entries = []
-
-    // Add recurring entries (show only once, not for each occurrence)
-    recurring.forEach(rec => {
-      entries.push({
-        date: null, // No specific date for recurring
-        dateObj: null,
-        startTime: rec.startTime,
-        endTime: rec.endTime,
-        type: rec.type,
-        isRecurring: true,
-        dayName: rec.dayName
+    const daysOrder = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    
+    availabilities.forEach(av => {
+      if (!av.start_time || !av.end_time) return
+      
+      const startTime = new Date(av.start_time)
+      const endTime = new Date(av.end_time)
+      
+      const startTime12 = startTime.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
       })
-    })
-
-    // Add individual entries
-    individual.forEach(ind => {
-      const date = new Date(year, month, ind.date)
-      entries.push({
-        date: ind.date,
-        dateObj: date,
-        startTime: ind.startTime,
-        endTime: ind.endTime,
-        type: ind.type,
-        isRecurring: false,
-        dayName: date.toLocaleDateString('en-US', { weekday: 'long' })
+      const endTime12 = endTime.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
       })
+      
+      if (av.is_recurring) {
+        const dayName = daysOrder[av.day_of_week]
+        const startDate = new Date(startTime)
+        entries.push({
+          id: av.id,
+          date: startDate.getDate(),
+          dateObj: startDate,
+          startTime: startTime12,
+          endTime: endTime12,
+          type: av.session_type || null,
+          isRecurring: true,
+          dayName: dayName,
+          dayOfWeek: av.day_of_week
+        })
+      } else {
+        const dateObj = new Date(startTime)
+        if (dateObj.getFullYear() === year && dateObj.getMonth() === month) {
+          entries.push({
+            id: av.id,
+            date: dateObj.getDate(),
+            dateObj: dateObj,
+            startTime: startTime12,
+            endTime: endTime12,
+            type: av.session_type || null,
+            isRecurring: false,
+            dayName: dateObj.toLocaleDateString('en-US', { weekday: 'long' })
+          })
+        }
+      }
     })
-
-    // Sort: recurring first (by day name), then individual (by date, then by start time)
+    
     entries.sort((a, b) => {
       if (a.isRecurring && !b.isRecurring) return -1
       if (!a.isRecurring && b.isRecurring) return 1
       if (a.isRecurring && b.isRecurring) {
-        // Sort recurring by day name
-        const daysOrder = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-        return daysOrder.indexOf(a.dayName) - daysOrder.indexOf(b.dayName)
+        return a.dayOfWeek - b.dayOfWeek
       }
-      // Individual entries: sort by date, then by start time
       if (a.date !== b.date) return a.date - b.date
       return a.startTime.localeCompare(b.startTime)
     })
-
+    
     return entries
-  }, [currentDate])
+  }, [availabilities, currentDate])
 
   const navigateWeek = (direction) => {
     const newDate = new Date(currentDate)
@@ -165,9 +174,97 @@ function Sessions() {
     return date.getDate()
   }
 
-  const getSessionsForDay = (date) => {
+  const generateTimeSlots = (startTime, endTime, intervalMinutes = 20) => {
+    const slots = []
+    const start = new Date(startTime)
+    const end = new Date(endTime)
+    
+    let current = new Date(start)
+    
+    while (current < end) {
+      const slotEnd = new Date(current.getTime() + intervalMinutes * 60000)
+      if (slotEnd > end) break
+      
+      slots.push({
+        start: new Date(current),
+        end: new Date(slotEnd)
+      })
+      
+      current = slotEnd
+    }
+    
+    return slots
+  }
+
+  const getTimeSlotsForDay = (date) => {
     const dateKey = formatDateKey(date)
-    return mockSessions[dateKey] || []
+    const dayOfWeek = date.getDay()
+    const slots = []
+    
+    availabilities.forEach(av => {
+      if (!av.start_time || !av.end_time) return
+      
+      const avStartTime = new Date(av.start_time)
+      const avEndTime = new Date(av.end_time)
+      
+      let appliesToThisDay = false
+      
+      if (av.is_recurring) {
+        if (av.day_of_week === dayOfWeek) {
+          appliesToThisDay = true
+        }
+      } else {
+        const avDate = new Date(avStartTime)
+        if (formatDateKey(avDate) === dateKey) {
+          appliesToThisDay = true
+        }
+      }
+      
+      if (appliesToThisDay) {
+        const baseDate = new Date(date)
+        baseDate.setHours(avStartTime.getHours(), avStartTime.getMinutes(), 0, 0)
+        
+        const endDate = new Date(date)
+        endDate.setHours(avEndTime.getHours(), avEndTime.getMinutes(), 0, 0)
+        
+        const timeSlots = generateTimeSlots(baseDate, endDate, 20)
+        
+        timeSlots.forEach(slot => {
+          const slotTime = slot.start.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+          })
+          
+          const sessionInSlot = sessions.find(s => {
+            if (!s.start_time || !s.end_time) return false
+            const sessionStart = new Date(s.start_time)
+            const slotDateKey = formatDateKey(sessionStart)
+            
+            return slotDateKey === dateKey &&
+                   sessionStart >= slot.start &&
+                   sessionStart < slot.end
+          })
+          
+          slots.push({
+            id: `slot-${av.id}-${slot.start.getTime()}`,
+            time: slotTime,
+            timeSort: slot.start.getTime(),
+            type: av.session_type,
+            isAvailable: !sessionInSlot,
+            session: sessionInSlot ? {
+              id: sessionInSlot.id,
+              status: sessionInSlot.status === 'available' ? 'available' : 'booked',
+              type: sessionInSlot.session_type
+            } : null
+          })
+        })
+      }
+    })
+    
+    slots.sort((a, b) => a.timeSort - b.timeSort)
+    
+    return slots
   }
 
   // Generate time options
@@ -199,19 +296,57 @@ function Sessions() {
   const startTimeOptions = generateTimeOptions(20, 0, 21, 40, 20) // 8:00 PM to 9:40 PM
   const endTimeOptions = generateTimeOptions(20, 20, 22, 0, 20) // 8:20 PM to 10:00 PM
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    // TODO: Submit to API
-    console.log('Form data:', formData)
-    setIsModalOpen(false)
-    // Reset form
-    setFormData({
-      date: '',
-      dateNative: '',
-      startTime: '',
-      endTime: '',
-      recurring: false
-    })
+    
+    if (!tutorId || !formData.startTime || !formData.endTime || !formData.date || !formData.sessionType) {
+      return
+    }
+    
+    try {
+      const [day, month, year] = formData.date.split('/')
+      const dateObj = new Date(year, month - 1, day)
+      const dayOfWeek = dateObj.getDay()
+      
+      const [startHour, startMin] = formData.startTime.split(':').map(Number)
+      const [endHour, endMin] = formData.endTime.split(':').map(Number)
+      
+      const startDateTime = new Date(dateObj)
+      startDateTime.setHours(startHour, startMin, 0, 0)
+      
+      const endDateTime = new Date(dateObj)
+      endDateTime.setHours(endHour, endMin, 0, 0)
+      
+      const availabilityData = {
+        tutor_id: tutorId,
+        day_of_week: dayOfWeek,
+        start_time: startDateTime.toISOString(),
+        end_time: endDateTime.toISOString(),
+        session_type: formData.sessionType,
+        is_recurring: formData.recurring
+      }
+      
+      const response = await api.createAvailability(getToken, availabilityData)
+      
+      if (response.ok) {
+        const data = await response.json()
+        setAvailabilities([...availabilities, data.availability])
+        setIsModalOpen(false)
+        setFormData({
+          date: '',
+          dateNative: '',
+          startTime: '',
+          endTime: '',
+          sessionType: 'online',
+          recurring: false
+        })
+      } else {
+        const errorData = await response.json()
+        console.error('Error creating availability:', errorData)
+      }
+    } catch (error) {
+      console.error('Error creating availability:', error)
+    }
   }
 
   return (
@@ -260,11 +395,11 @@ function Sessions() {
       <Card className="p-6">
         <div className="grid grid-cols-7 gap-4">
           {weekDays.map((day, index) => {
-            const daySessions = getSessionsForDay(day)
+            const timeSlots = getTimeSlotsForDay(day)
             return (
               <div
                 key={index}
-                className="flex flex-col p-3 border border-border rounded-lg bg-card min-h-[180px]"
+                className="flex flex-col p-3 border border-border rounded-lg bg-card min-h-[500px]"
               >
                 <div className="text-xs font-medium text-muted-foreground mb-1 text-center">
                   {formatDayName(day)}
@@ -272,34 +407,34 @@ function Sessions() {
                 <div className="text-lg font-bold text-foreground mb-3 text-center">
                   {formatDayNumber(day)}
                 </div>
-                <div className="flex-1 space-y-1.5">
-                  {daySessions.length > 0 ? (
-                    daySessions.map((session) => (
+                <div className="flex-1 space-y-2 overflow-y-auto max-h-[500px]">
+                  {timeSlots.length > 0 ? (
+                    timeSlots.map((slot) => (
                       <div
-                        key={session.id}
+                        key={slot.id}
                         className={cn(
                           "p-1.5 rounded text-[10px] flex items-center gap-1.5",
-                          session.status === 'available'
+                          slot.session
                             ? "bg-green-100 text-green-800 border border-green-200"
                             : "bg-blue-100 text-blue-800 border border-blue-200"
                         )}
                       >
-                        {session.type === 'online' ? (
+                        {slot.type === 'online' ? (
                           <Monitor className="w-2.5 h-2.5 flex-shrink-0" />
                         ) : (
                           <MapPin className="w-2.5 h-2.5 flex-shrink-0" />
                         )}
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate text-[10px]">{session.time}</div>
+                          <div className="font-medium truncate text-[10px]">{slot.time}</div>
                           <div className="text-[9px] opacity-75">
-                            {session.status === 'available' ? 'Available' : 'Booked'}
+                            {slot.session ? 'Booked' : 'Available'}
                           </div>
                         </div>
                       </div>
                     ))
                   ) : (
                     <div className="text-xs text-muted-foreground text-center py-3">
-                      No sessions
+                      No availability
                     </div>
                   )}
                 </div>
@@ -318,6 +453,14 @@ function Sessions() {
             <MapPin className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm text-muted-foreground">In-Person</span>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-blue-100 border border-blue-200 rounded"></div>
+            <span className="text-sm text-muted-foreground">Available</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-green-100 border border-green-200 rounded"></div>
+            <span className="text-sm text-muted-foreground">Booked</span>
+          </div>
         </div>
       </Card>
 
@@ -330,7 +473,7 @@ function Sessions() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Date</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Start Date</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Day</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Time</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Type</th>
@@ -342,7 +485,7 @@ function Sessions() {
                 monthlyAvailability.map((entry, index) => (
                   <tr key={index} className="border-b border-border hover:bg-muted/50">
                     <td className="py-3 px-4 text-sm text-foreground">
-                      {entry.isRecurring ? '—' : entry.date}
+                      {entry.date}
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
                       {entry.isRecurring ? `Every ${entry.dayName}` : entry.dayName}
@@ -351,16 +494,20 @@ function Sessions() {
                       {entry.startTime} - {entry.endTime}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        {entry.type === 'online' ? (
-                          <Monitor className="w-4 h-4 text-muted-foreground" />
-                        ) : (
-                          <MapPin className="w-4 h-4 text-muted-foreground" />
-                        )}
-                        <span className="text-sm text-foreground capitalize">
-                          {entry.type === 'online' ? 'Online' : 'In-Person'}
-                        </span>
-                      </div>
+                      {entry.type ? (
+                        <div className="flex items-center gap-2">
+                          {entry.type === 'online' ? (
+                            <Monitor className="w-4 h-4 text-muted-foreground" />
+                          ) : (
+                            <MapPin className="w-4 h-4 text-muted-foreground" />
+                          )}
+                          <span className="text-sm text-foreground capitalize">
+                            {entry.type === 'online' ? 'Online' : 'In-Person'}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="py-3 px-4">
                       <span className={cn(
@@ -506,6 +653,23 @@ function Sessions() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              {/* Session Type Selection */}
+              <div className="grid gap-2">
+                <Label htmlFor="session-type">Session Type</Label>
+                <Select
+                  value={formData.sessionType}
+                  onValueChange={(value) => setFormData({ ...formData, sessionType: value })}
+                >
+                  <SelectTrigger id="session-type">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="online">Online</SelectItem>
+                    <SelectItem value="in-person">In-Person</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Recurring Toggle */}
