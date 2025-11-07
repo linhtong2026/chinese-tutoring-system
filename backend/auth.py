@@ -1,61 +1,38 @@
 from functools import wraps
 from flask import request, jsonify
-from jwt import decode, get_unverified_header
-from jwt.algorithms import RSAAlgorithm
-import requests
-import json
-
-CLERK_JWKS_URL = "https://api.clerk.dev/v1/jwks"
-
-def get_clerk_jwks():
-    response = requests.get(CLERK_JWKS_URL)
-    return response.json()
-
-def verify_clerk_token(token):
-    try:
-        unverified_header = get_unverified_header(token)
-        jwks = get_clerk_jwks()
-        
-        rsa_key = None
-        for key in jwks.get("keys", []):
-            if key["kid"] == unverified_header["kid"]:
-                rsa_key = RSAAlgorithm.from_jwk(json.dumps(key))
-                break
-        
-        if not rsa_key:
-            return None
-        
-        decoded_token = decode(
-            token,
-            rsa_key,
-            algorithms=["RS256"],
-            options={"verify_signature": True}
-        )
-        
-        return decoded_token
-    except Exception:
-        return None
+import os
+from clerk_backend_api import Clerk
+from clerk_backend_api.security.types import AuthenticateRequestOptions
+from models import db, User
 
 def require_auth(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        auth_header = request.headers.get('Authorization')
-        
-        if not auth_header:
-            return jsonify({'error': 'No authorization header'}), 401
+        sdk = Clerk(bearer_auth=os.environ.get('CLERK_SECRET_KEY'))
         
         try:
-            token = auth_header.split(' ')[1]
-        except IndexError:
-            return jsonify({'error': 'Invalid authorization header format'}), 401
-        
-        decoded_token = verify_clerk_token(token)
-        
-        if not decoded_token:
-            return jsonify({'error': 'Invalid or expired token'}), 401
-        
-        request.clerk_user = decoded_token
-        return f(*args, **kwargs)
+            options = AuthenticateRequestOptions(
+                authorized_parties=['http://localhost:5173']
+            )
+            request_state = sdk.authenticate_request(request, options)
+            
+            if not request_state.is_signed_in:
+                return jsonify({'error': 'Unauthorized'}), 401
+            
+            clerk_user_id = request_state.payload.get('sub')
+            name = request_state.payload.get('name', '')
+            email = request_state.payload.get('email', '')
+            
+            db_user = User.get_or_create_from_clerk(clerk_user_id, name, email)
+            request.db_user = db_user
+            request.clerk_user = request_state.payload
+            
+            return f(*args, **kwargs)
+        except Exception as e:
+            print(f"[DEBUG] Auth error: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Unauthorized'}), 401
     
     return decorated_function
 
