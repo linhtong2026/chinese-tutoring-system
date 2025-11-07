@@ -40,8 +40,10 @@ def update_clerk_metadata(clerk_user_id, metadata):
     except Exception:
         return False
 
+
 NY_TZ = ZoneInfo("America/New_York")
 UTC = ZoneInfo("UTC")
+
 
 def parse_client_dt(s: str) -> datetime:
     """Accept ISO from client (naive => America/New_York). Store UTC."""
@@ -52,11 +54,14 @@ def parse_client_dt(s: str) -> datetime:
         dt = dt.replace(tzinfo=NY_TZ)
     return dt.astimezone(UTC)
 
+
 def to_client_iso(dt: datetime) -> str:
     return dt.astimezone(NY_TZ).isoformat() if dt else None
 
+
 def role_required(role: str):
     from functools import wraps
+
     def decorator(fn):
         @wraps(fn)
         def wrapped(*args, **kwargs):
@@ -66,8 +71,11 @@ def role_required(role: str):
             if db_user.role != role:
                 return jsonify({"error": "Forbidden"}), 403
             return fn(*args, **kwargs)
+
         return wrapped
+
     return decorator
+
 
 def session_to_dict(s: Session, include_people=True):
     data = s.to_dict()
@@ -84,20 +92,26 @@ def session_to_dict(s: Session, include_people=True):
                 "id": s.student_id,
                 "name": s.student_user.name if s.student_user else None,
                 "email": s.student_user.email if s.student_user else None,
-            } if s.student_id else None
+            }
+            if s.student_id
+            else None
         )
-    data["booked"] = (s.status == "booked")
+    data["booked"] = s.status == "booked"
     return data
 
-def tutor_overlap_exists(tutor_id: int, start_utc: datetime, end_utc: datetime, exclude_id: int = None) -> bool:
+
+def tutor_overlap_exists(
+    tutor_id: int, start_utc: datetime, end_utc: datetime, exclude_id: int = None
+) -> bool:
     q = Session.query.filter(
         Session.tutor_id == tutor_id,
         Session.status.in_(["available", "booked"]),
-        and_(Session.start_time < end_utc, Session.end_time > start_utc)
+        and_(Session.start_time < end_utc, Session.end_time > start_utc),
     )
     if exclude_id:
         q = q.filter(Session.id != exclude_id)
     return db.session.query(q.exists()).scalar()
+
 
 @app.route("/api/health")
 def health():
@@ -136,6 +150,12 @@ def get_user():
         clerk_role = clerk_user["public_metadata"].get("role")
         if clerk_role and clerk_role != db_user.role:
             db_user.role = clerk_role
+            # If role changed to tutor, ensure Tutor record exists
+            if clerk_role == "tutor":
+                tutor = Tutor.query.filter_by(user_id=db_user.id).first()
+                if not tutor:
+                    tutor = Tutor(user_id=db_user.id)
+                    db.session.add(tutor)
             db.session.commit()
 
     return jsonify(
@@ -180,9 +200,35 @@ def update_profile():
     return jsonify({"success": True, "user": db_user.to_dict()})
 
 
+@app.route("/api/tutor/by-user/<int:user_id>")
+@require_auth
+def get_tutor_by_user(user_id):
+    """Get or create Tutor record for a user"""
+    db_user = request.db_user
+
+    # Users can only access their own tutor profile, or admins can access any
+    if db_user.id != user_id and db_user.role != "admin":
+        return jsonify({"error": "Forbidden"}), 403
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Get or create Tutor record
+    tutor = Tutor.query.filter_by(user_id=user_id).first()
+    if not tutor:
+        # Create Tutor record if user is a tutor
+        if user.role == "tutor":
+            tutor = Tutor(user_id=user_id)
+            db.session.add(tutor)
+            db.session.commit()
+        else:
+            return jsonify({"error": "User is not a tutor"}), 400
+
+    return jsonify({"tutor": tutor.to_dict()})
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     app.run(debug=True, port=5001)

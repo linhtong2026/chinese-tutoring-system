@@ -11,6 +11,31 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import api from '@/services/api'
 
+// Format date as YYYY-MM-DD in NYC timezone for comparison
+const formatDateKey = (date) => {
+  // Convert to NYC timezone and format as YYYY-MM-DD
+  const nycDate = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }))
+  const year = nycDate.getFullYear()
+  const month = String(nycDate.getMonth() + 1).padStart(2, '0')
+  const day = String(nycDate.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+// Format date from ISO string - backend sends UTC, we treat it as NYC
+const formatDateKeyFromISO = (isoString) => {
+  // Extract date directly from ISO string (treating UTC as NYC)
+  const match = isoString.match(/(\d{4})-(\d{2})-(\d{2})T/)
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]}`
+  }
+  // Fallback
+  const date = new Date(isoString)
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function Sessions({ userData }) {
   const { getToken } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -45,11 +70,6 @@ function Sessions({ userData }) {
       days.push(day)
     }
     return days
-  }
-
-  // Format date as YYYY-MM-DD for comparison
-  const formatDateKey = (date) => {
-    return date.toISOString().split('T')[0]
   }
 
   const weekDays = getWeekDays()
@@ -102,27 +122,45 @@ function Sessions({ userData }) {
     availabilities.forEach(av => {
       if (!av.start_time || !av.end_time) return
       
-      const startTime = new Date(av.start_time)
-      const endTime = new Date(av.end_time)
+      // Parse times from ISO string - backend sends UTC time (which we treat as NYC time)
+      const parseNYCTime = (isoString) => {
+        // Backend sends UTC time like "2024-01-15T20:00:00+00:00" or "2024-01-15T20:00:00Z"
+        // Extract time components directly from the string (treating UTC as NYC time)
+        const match = isoString.match(/T(\d{2}):(\d{2}):\d{2}/)
+        if (match) {
+          const hour24 = parseInt(match[1], 10)
+          const minute = parseInt(match[2], 10)
+          const hour12 = hour24 === 0 ? 12 : (hour24 > 12 ? hour24 - 12 : hour24)
+          const ampm = hour24 >= 12 ? 'PM' : 'AM'
+          return `${hour12}:${String(minute).padStart(2, '0')} ${ampm}`
+        }
+        // Fallback
+        const dt = new Date(isoString)
+        const hour24 = dt.getUTCHours()
+        const minute = dt.getUTCMinutes()
+        const hour12 = hour24 === 0 ? 12 : (hour24 > 12 ? hour24 - 12 : hour24)
+        const ampm = hour24 >= 12 ? 'PM' : 'AM'
+        return `${hour12}:${String(minute).padStart(2, '0')} ${ampm}`
+      }
       
-      const startTime12 = startTime.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      })
-      const endTime12 = endTime.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      })
+      const startTime12 = parseNYCTime(av.start_time)
+      const endTime12 = parseNYCTime(av.end_time)
+      
+      // Get date from UTC time (treating UTC as NYC)
+      const startTime = new Date(av.start_time)
+      const startDateMatch = av.start_time.match(/(\d{4})-(\d{2})-(\d{2})T/)
+      const startYear = startDateMatch ? parseInt(startDateMatch[1], 10) : startTime.getUTCFullYear()
+      const startMonth = startDateMatch ? parseInt(startDateMatch[2], 10) - 1 : startTime.getUTCMonth()
+      const startDay = startDateMatch ? parseInt(startDateMatch[3], 10) : startTime.getUTCDate()
       
       if (av.is_recurring) {
         const dayName = daysOrder[av.day_of_week]
-        const startDate = new Date(startTime)
+        // For recurring, use the date from start_time (treating UTC as NYC)
+        const dateInNYC = new Date(startYear, startMonth, startDay)
         entries.push({
           id: av.id,
-          date: startDate.getDate(),
-          dateObj: startDate,
+          date: dateInNYC.getDate(),
+          dateObj: dateInNYC,
           startTime: startTime12,
           endTime: endTime12,
           type: av.session_type || null,
@@ -131,17 +169,18 @@ function Sessions({ userData }) {
           dayOfWeek: av.day_of_week
         })
       } else {
-        const dateObj = new Date(startTime)
-        if (dateObj.getFullYear() === year && dateObj.getMonth() === month) {
+        // For non-recurring, check if it's in the current month (treating UTC as NYC)
+        const dateInNYC = new Date(startYear, startMonth, startDay)
+        if (dateInNYC.getFullYear() === year && dateInNYC.getMonth() === month) {
           entries.push({
             id: av.id,
-            date: dateObj.getDate(),
-            dateObj: dateObj,
+            date: dateInNYC.getDate(),
+            dateObj: dateInNYC,
             startTime: startTime12,
             endTime: endTime12,
             type: av.session_type || null,
             isRecurring: false,
-            dayName: dateObj.toLocaleDateString('en-US', { weekday: 'long' })
+            dayName: dateInNYC.toLocaleDateString('en-US', { weekday: 'long' })
           })
         }
       }
@@ -204,8 +243,29 @@ function Sessions({ userData }) {
     availabilities.forEach(av => {
       if (!av.start_time || !av.end_time) return
       
-      const avStartTime = new Date(av.start_time)
-      const avEndTime = new Date(av.end_time)
+      // Parse times - backend sends UTC time (which we treat as NYC time)
+      const parseNYCTime = (isoString) => {
+        // Backend sends UTC time like "2024-01-15T20:00:00+00:00" or "2024-01-15T20:00:00Z"
+        // Extract time and date components directly (treating UTC as NYC time)
+        const match = isoString.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):\d{2}/)
+        if (match) {
+          const [, year, month, day, hours, minutes] = match.map(Number)
+          const nycDate = new Date(year, month - 1, day, hours, minutes)
+          return { hours, minutes, date: nycDate, year, month, day }
+        }
+        // Fallback
+        const dt = new Date(isoString)
+        const year = dt.getUTCFullYear()
+        const month = dt.getUTCMonth() + 1
+        const day = dt.getUTCDate()
+        const hours = dt.getUTCHours()
+        const minutes = dt.getUTCMinutes()
+        const nycDate = new Date(year, month - 1, day, hours, minutes)
+        return { hours, minutes, date: nycDate, year, month, day }
+      }
+      
+      const startNYC = parseNYCTime(av.start_time)
+      const endNYC = parseNYCTime(av.end_time)
       
       let appliesToThisDay = false
       
@@ -214,50 +274,75 @@ function Sessions({ userData }) {
           appliesToThisDay = true
         }
       } else {
-        const avDate = new Date(avStartTime)
-        if (formatDateKey(avDate) === dateKey) {
+        // For non-recurring, compare dates in NYC timezone
+        // Use the date from the parsed NYC time
+        const avDateKey = `${startNYC.year}-${String(startNYC.month).padStart(2, '0')}-${String(startNYC.day).padStart(2, '0')}`
+        if (avDateKey === dateKey) {
           appliesToThisDay = true
         }
       }
       
       if (appliesToThisDay) {
         const baseDate = new Date(date)
-        baseDate.setHours(avStartTime.getHours(), avStartTime.getMinutes(), 0, 0)
+        baseDate.setHours(startNYC.hours, startNYC.minutes, 0, 0)
         
         const endDate = new Date(date)
-        endDate.setHours(avEndTime.getHours(), avEndTime.getMinutes(), 0, 0)
+        endDate.setHours(endNYC.hours, endNYC.minutes, 0, 0)
         
         const timeSlots = generateTimeSlots(baseDate, endDate, 20)
         
-        timeSlots.forEach(slot => {
-          const slotTime = slot.start.toLocaleTimeString('en-US', {
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true
-          })
+        timeSlots.forEach((slot, slotIndex) => {
+          // Calculate time directly from NYC start time and slot index to avoid timezone issues
+          const slotMinutes = startNYC.hours * 60 + startNYC.minutes + (slotIndex * 20)
+          const slotHour24 = Math.floor(slotMinutes / 60) % 24
+          const slotMin = slotMinutes % 60
+          
+          // Format as 12-hour time with AM/PM
+          const slotHour12 = slotHour24 === 0 ? 12 : (slotHour24 > 12 ? slotHour24 - 12 : slotHour24)
+          const ampm = slotHour24 >= 12 ? 'PM' : 'AM'
+          const slotTime = `${slotHour12}:${String(slotMin).padStart(2, '0')} ${ampm}`
           
           const sessionInSlot = sessions.find(s => {
-            if (!s.start_time || !s.end_time) return false
-            const sessionStart = new Date(s.start_time)
-            const slotDateKey = formatDateKey(sessionStart)
+            if (!s.start_time) return false
             
-            return slotDateKey === dateKey &&
-                   sessionStart >= slot.start &&
-                   sessionStart < slot.end
+            // Parse session time (UTC, treating as NYC)
+            const sessionTimeMatch = s.start_time.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):\d{2}/)
+            if (!sessionTimeMatch) return false
+            
+            const [, sYear, sMonth, sDay, sHour, sMin] = sessionTimeMatch.map(Number)
+            const sessionDateKey = `${sYear}-${String(sMonth).padStart(2, '0')}-${String(sDay).padStart(2, '0')}`
+            
+            // Check if session is on the same date
+            if (sessionDateKey !== dateKey) return false
+            
+            // Check if session time overlaps with slot time
+            // Slot time is calculated from startNYC.hours + slotIndex * 20 minutes
+            const slotStartMinutes = startNYC.hours * 60 + startNYC.minutes + (slotIndex * 20)
+            const slotEndMinutes = slotStartMinutes + 20
+            const sessionStartMinutes = sHour * 60 + sMin
+            
+            // Session overlaps if it starts within the slot
+            return sessionStartMinutes >= slotStartMinutes && sessionStartMinutes < slotEndMinutes
           })
           
-          slots.push({
-            id: `slot-${av.id}-${slot.start.getTime()}`,
-            time: slotTime,
-            timeSort: slot.start.getTime(),
-            type: av.session_type,
-            isAvailable: !sessionInSlot,
-            session: sessionInSlot ? {
-              id: sessionInSlot.id,
-              status: sessionInSlot.status === 'available' ? 'available' : 'booked',
-              type: sessionInSlot.session_type
-            } : null
-          })
+          // Only show slot if there's a session OR if it's the first slot (to show availability window)
+          const hasSession = !!sessionInSlot
+          const isFirstSlot = slotIndex === 0
+          
+          if (hasSession || isFirstSlot) {
+            slots.push({
+              id: `slot-${av.id}-${slot.start.getTime()}`,
+              time: slotTime,
+              timeSort: slot.start.getTime(),
+              type: av.session_type,
+              isAvailable: !hasSession,
+              session: sessionInSlot ? {
+                id: sessionInSlot.id,
+                status: sessionInSlot.status === 'booked' ? 'booked' : 'available',
+                type: sessionInSlot.session_type
+              } : null
+            })
+          }
         })
       }
     })
@@ -299,37 +384,66 @@ function Sessions({ userData }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     
-    if (!tutorId || !formData.startTime || !formData.endTime || !formData.date || !formData.sessionType) {
+    console.log('Form submitted:', formData)
+    console.log('Tutor ID:', tutorId)
+    
+    if (!tutorId) {
+      console.error('Missing tutorId')
+      alert('Tutor ID is missing. Please refresh the page.')
+      return
+    }
+    
+    if (!formData.startTime || !formData.endTime || !formData.date || !formData.sessionType) {
+      console.error('Missing form data:', { 
+        startTime: formData.startTime, 
+        endTime: formData.endTime, 
+        date: formData.date, 
+        sessionType: formData.sessionType 
+      })
+      alert('Please fill in all required fields.')
       return
     }
     
     try {
       const [day, month, year] = formData.date.split('/')
-      const dateObj = new Date(year, month - 1, day)
-      const dayOfWeek = dateObj.getDay()
+      if (!day || !month || !year || day.length !== 2 || month.length !== 2 || year.length !== 4) {
+        alert('Please enter a valid date in dd/mm/yyyy format.')
+        return
+      }
       
+      // Create date in local timezone (America/New_York) to avoid timezone shift
+      // Format: YYYY-MM-DDTHH:mm:ss (local time, no timezone offset)
       const [startHour, startMin] = formData.startTime.split(':').map(Number)
       const [endHour, endMin] = formData.endTime.split(':').map(Number)
       
-      const startDateTime = new Date(dateObj)
-      startDateTime.setHours(startHour, startMin, 0, 0)
+      // Create date string in YYYY-MM-DD format
+      const dateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
       
-      const endDateTime = new Date(dateObj)
-      endDateTime.setHours(endHour, endMin, 0, 0)
+      // Create datetime strings in local time (America/New_York timezone)
+      // Backend expects ISO format and will convert from America/New_York to UTC
+      const startTimeStr = `${dateStr}T${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`
+      const endTimeStr = `${dateStr}T${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}:00`
+      
+      // Calculate day of week from the date
+      const dateObj = new Date(year, month - 1, day)
+      const dayOfWeek = dateObj.getDay()
       
       const availabilityData = {
         tutor_id: tutorId,
         day_of_week: dayOfWeek,
-        start_time: startDateTime.toISOString(),
-        end_time: endDateTime.toISOString(),
+        start_time: startTimeStr,
+        end_time: endTimeStr,
         session_type: formData.sessionType,
         is_recurring: formData.recurring
       }
       
+      console.log('Calling API with data:', availabilityData)
       const response = await api.createAvailability(getToken, availabilityData)
+      console.log('API Response status:', response.status)
       
       if (response.ok) {
         const data = await response.json()
+        console.log('Availability created:', data)
         setAvailabilities([...availabilities, data.availability])
         setIsModalOpen(false)
         setFormData({
@@ -343,9 +457,11 @@ function Sessions({ userData }) {
       } else {
         const errorData = await response.json()
         console.error('Error creating availability:', errorData)
+        alert(`Error: ${errorData.error || 'Failed to create availability'}`)
       }
     } catch (error) {
       console.error('Error creating availability:', error)
+      alert(`Error: ${error.message}`)
     }
   }
 
@@ -399,7 +515,7 @@ function Sessions({ userData }) {
             return (
               <div
                 key={index}
-                className="flex flex-col p-3 border border-border rounded-lg bg-card min-h-[500px]"
+                className="flex flex-col p-3 border border-border rounded-lg bg-card"
               >
                 <div className="text-xs font-medium text-muted-foreground mb-1 text-center">
                   {formatDayName(day)}
@@ -407,15 +523,17 @@ function Sessions({ userData }) {
                 <div className="text-lg font-bold text-foreground mb-3 text-center">
                   {formatDayNumber(day)}
                 </div>
-                <div className="flex-1 space-y-2 overflow-y-auto max-h-[500px]">
+                <div className="space-y-2">
                   {timeSlots.length > 0 ? (
                     timeSlots.map((slot) => (
                       <div
                         key={slot.id}
                         className={cn(
                           "p-1.5 rounded text-[10px] flex items-center gap-1.5",
-                          slot.session
+                          slot.session && slot.session.status === 'booked'
                             ? "bg-green-100 text-green-800 border border-green-200"
+                            : slot.session
+                            ? "bg-blue-100 text-blue-800 border border-blue-200"
                             : "bg-blue-100 text-blue-800 border border-blue-200"
                         )}
                       >
@@ -427,7 +545,7 @@ function Sessions({ userData }) {
                         <div className="flex-1 min-w-0">
                           <div className="font-medium truncate text-[10px]">{slot.time}</div>
                           <div className="text-[9px] opacity-75">
-                            {slot.session ? 'Booked' : 'Available'}
+                            {slot.session && slot.session.status === 'booked' ? 'Booked' : slot.session ? 'Available Session' : 'Available'}
                           </div>
                         </div>
                       </div>
