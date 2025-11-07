@@ -223,7 +223,7 @@ def tutor_create_session():
     s = Session(
         tutor_id=user.id,
         student_id=None,
-        course=data.get("course"),
+        course=data["course"],
         session_type=data["session_type"],
         start_time=start_utc,
         end_time=end_utc,
