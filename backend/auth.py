@@ -11,6 +11,13 @@ def require_auth(f):
         sdk = Clerk(bearer_auth=os.environ.get('CLERK_SECRET_KEY'))
         
         try:
+            # Extract the raw JWT token from Authorization header
+            auth_header = request.headers.get('Authorization', '')
+            jwt_token = None
+            if auth_header.startswith('Bearer '):
+                jwt_token = auth_header[7:]  # Remove 'Bearer ' prefix
+            request.clerk_jwt = jwt_token  # Make JWT available on request object
+            
             options = AuthenticateRequestOptions(
                 authorized_parties=['http://localhost:5173']
             )
