@@ -21,20 +21,6 @@ const formatDateKey = (date) => {
   return `${year}-${month}-${day}`
 }
 
-// Format date from ISO string - backend sends UTC, we treat it as NYC
-const formatDateKeyFromISO = (isoString) => {
-  // Extract date directly from ISO string (treating UTC as NYC)
-  const match = isoString.match(/(\d{4})-(\d{2})-(\d{2})T/)
-  if (match) {
-    return `${match[1]}-${match[2]}-${match[3]}`
-  }
-  // Fallback
-  const date = new Date(isoString)
-  const year = date.getUTCFullYear()
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(date.getUTCDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
 
 function Sessions({ userData }) {
   const { getToken } = useAuth()
@@ -325,31 +311,68 @@ function Sessions({ userData }) {
             return sessionStartMinutes >= slotStartMinutes && sessionStartMinutes < slotEndMinutes
           })
           
-          // Only show slot if there's a session OR if it's the first slot (to show availability window)
           const hasSession = !!sessionInSlot
-          const isFirstSlot = slotIndex === 0
           
-          if (hasSession || isFirstSlot) {
-            slots.push({
-              id: `slot-${av.id}-${slot.start.getTime()}`,
-              time: slotTime,
-              timeSort: slot.start.getTime(),
-              type: av.session_type,
-              isAvailable: !hasSession,
-              session: sessionInSlot ? {
-                id: sessionInSlot.id,
-                status: sessionInSlot.status === 'booked' ? 'booked' : 'available',
-                type: sessionInSlot.session_type
-              } : null
-            })
-          }
+          slots.push({
+            id: `slot-${av.id}-${slot.start.getTime()}`,
+            time: slotTime,
+            timeSort: slot.start.getTime(),
+            type: av.session_type,
+            isAvailable: !hasSession,
+            session: sessionInSlot ? {
+              id: sessionInSlot.id,
+              status: sessionInSlot.status === 'booked' ? 'booked' : 'available',
+              type: sessionInSlot.session_type
+            } : null
+          })
         })
       }
     })
     
     slots.sort((a, b) => a.timeSort - b.timeSort)
     
-    return slots
+    const slotMap = new Map()
+    const usedSessionIds = new Set()
+    
+    for (const slot of slots) {
+      const slotKey = slot.timeSort.toString()
+      
+      if (slotMap.has(slotKey)) {
+        const existingSlot = slotMap.get(slotKey)
+        
+        if (slot.session && !existingSlot.session) {
+          if (!usedSessionIds.has(slot.session.id)) {
+            existingSlot.session = slot.session
+            existingSlot.isAvailable = false
+            usedSessionIds.add(slot.session.id)
+          }
+        } else if (slot.session && existingSlot.session) {
+          if (slot.session.id === existingSlot.session.id) {
+            continue
+          }
+          if (!usedSessionIds.has(slot.session.id)) {
+            if (slot.session.status === 'booked' && existingSlot.session.status !== 'booked') {
+              usedSessionIds.delete(existingSlot.session.id)
+              existingSlot.session = slot.session
+              existingSlot.isAvailable = false
+              usedSessionIds.add(slot.session.id)
+            }
+          }
+        }
+      } else {
+        if (slot.session) {
+          if (usedSessionIds.has(slot.session.id)) {
+            slot.session = null
+            slot.isAvailable = true
+          } else {
+            usedSessionIds.add(slot.session.id)
+          }
+        }
+        slotMap.set(slotKey, slot)
+      }
+    }
+    
+    return Array.from(slotMap.values())
   }
 
   // Generate time options
@@ -405,9 +428,9 @@ function Sessions({ userData }) {
     }
     
     try {
-      const [day, month, year] = formData.date.split('/')
-      if (!day || !month || !year || day.length !== 2 || month.length !== 2 || year.length !== 4) {
-        alert('Please enter a valid date in dd/mm/yyyy format.')
+      const [month, day, year] = formData.date.split('/')
+      if (!month || !day || !year || month.length !== 2 || day.length !== 2 || year.length !== 4) {
+        alert('Please enter a valid date in mm/dd/yyyy format.')
         return
       }
       
@@ -669,7 +692,7 @@ function Sessions({ userData }) {
                   <Input
                     id="date"
                     type="text"
-                    placeholder="dd/mm/yyyy"
+                    placeholder="mm/dd/yyyy"
                     value={formData.date}
                     onChange={(e) => {
                       const input = e.target.value
@@ -701,12 +724,12 @@ function Sessions({ userData }) {
                       const nativeDate = e.target.value
                       if (nativeDate) {
                         const date = new Date(nativeDate)
-                        const day = date.getDate().toString().padStart(2, '0')
                         const month = (date.getMonth() + 1).toString().padStart(2, '0')
+                        const day = date.getDate().toString().padStart(2, '0')
                         const year = date.getFullYear()
                         setFormData({ 
                           ...formData, 
-                          date: `${day}/${month}/${year}`,
+                          date: `${month}/${day}/${year}`,
                           dateNative: nativeDate
                         })
                       } else {
@@ -719,10 +742,10 @@ function Sessions({ userData }) {
                     onClick={() => {
                       const nativeInput = document.getElementById('date-native')
                       if (nativeInput) {
-                        // Convert dd/mm/yyyy to YYYY-MM-DD for native input
+                        // Convert mm/dd/yyyy to YYYY-MM-DD for native input
                         if (formData.date) {
-                          const [day, month, year] = formData.date.split('/')
-                          if (day && month && year) {
+                          const [month, day, year] = formData.date.split('/')
+                          if (month && day && year) {
                             nativeInput.value = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
                           }
                         }
