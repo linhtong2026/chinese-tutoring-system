@@ -10,7 +10,10 @@ class User(db.Model):
     clerk_user_id = db.Column(db.String(255), unique=True, nullable=False, index=True)
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100), nullable=False)
+    role = db.Column(db.String(20))
+    class_name = db.Column(db.String(50))
     language_preference = db.Column(db.String(10), default='en')
+    onboarding_complete = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     tutor_profile = db.relationship('Tutor', backref='user', uselist=False, cascade='all, delete-orphan')
@@ -18,13 +21,29 @@ class User(db.Model):
     tutor_sessions = db.relationship('Session', foreign_keys='Session.tutor_id', backref='tutor_user', lazy='dynamic')
     feedbacks = db.relationship('Feedback', backref='user', lazy='dynamic')
     
+    @staticmethod
+    def get_or_create_from_clerk(clerk_user_id, name, email):
+        user = User.query.filter_by(clerk_user_id=clerk_user_id).first()
+        if not user:
+            user = User(
+                clerk_user_id=clerk_user_id,
+                name=name,
+                email=email
+            )
+            db.session.add(user)
+            db.session.commit()
+        return user
+    
     def to_dict(self):
         return {
             'id': self.id,
             'clerk_user_id': self.clerk_user_id,
             'name': self.name,
             'email': self.email,
+            'role': self.role,
+            'class_name': self.class_name,
             'language_preference': self.language_preference,
+            'onboarding_complete': self.onboarding_complete,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
@@ -86,7 +105,6 @@ class Session(db.Model):
     
     session_notes = db.relationship('SessionNote', backref='session', lazy='dynamic', cascade='all, delete-orphan')
     feedbacks = db.relationship('Feedback', backref='session', lazy='dynamic', cascade='all, delete-orphan')
-    notifications = db.relationship('Notification', backref='session', lazy='dynamic', cascade='all, delete-orphan')
     
     def to_dict(self):
         return {
