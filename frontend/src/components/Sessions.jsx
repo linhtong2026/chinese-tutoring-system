@@ -11,13 +11,10 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import api from '@/services/api'
 
-// Format date as YYYY-MM-DD in NYC timezone for comparison
 const formatDateKey = (date) => {
-  // Convert to NYC timezone and format as YYYY-MM-DD
-  const nycDate = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }))
-  const year = nycDate.getFullYear()
-  const month = String(nycDate.getMonth() + 1).padStart(2, '0')
-  const day = String(nycDate.getDate()).padStart(2, '0')
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
@@ -31,12 +28,17 @@ function Sessions({ userData }) {
   const [tutorId, setTutorId] = useState(null)
   const [formData, setFormData] = useState({
     date: '',
-    dateNative: '', // For native date picker
+    dateNative: '',
     startTime: '',
     endTime: '',
     sessionType: 'online',
     recurring: false
   })
+  const [tutors, setTutors] = useState([])
+  const [selectedTutor, setSelectedTutor] = useState(null)
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
+  const [selectedSlot, setSelectedSlot] = useState(null)
+  const [viewMode, setViewMode] = useState('month')
 
   // Get the start of the week (Sunday)
   const getWeekStart = (date) => {
@@ -61,41 +63,99 @@ function Sessions({ userData }) {
   const weekDays = getWeekDays()
 
   useEffect(() => {
-    const fetchTutorAndData = async () => {
+    const fetchData = async () => {
       if (!userData?.id) return
       
       try {
-        const tutorResponse = await api.getTutorByUser(getToken, userData.id)
-        if (tutorResponse.ok) {
-          const tutorData = await tutorResponse.json()
-          const tutor = tutorData.tutor
-          setTutorId(tutor.id)
-          
-          const [sessionsResponse, availabilityResponse] = await Promise.all([
-            api.getSessions(getToken, userData.id),
-            api.getAvailability(getToken, tutor.id)
+        if (userData.role === 'tutor') {
+          const tutorResponse = await api.getTutorByUser(getToken, userData.id)
+          if (tutorResponse.ok) {
+            const tutorData = await tutorResponse.json()
+            const tutor = tutorData.tutor
+            setTutorId(tutor.id)
+            
+            const [sessionsResponse, availabilityResponse] = await Promise.all([
+              api.getSessions(getToken, userData.id),
+              api.getAvailability(getToken, tutor.id)
+            ])
+            
+            if (sessionsResponse.ok) {
+              const sessionsData = await sessionsResponse.json()
+              setSessions(sessionsData.sessions || [])
+            }
+            
+            if (availabilityResponse.ok) {
+              const availabilityData = await availabilityResponse.json()
+              setAvailabilities(availabilityData.availabilities || [])
+            }
+          } else {
+            const errorData = await tutorResponse.json()
+            console.error('Error fetching tutor:', errorData)
+          }
+        } else if (userData.role === 'student') {
+          const [tutorsResponse, sessionsResponse] = await Promise.all([
+            api.getTutors(getToken),
+            api.getStudentSessions(getToken)
           ])
+          
+          if (tutorsResponse.ok) {
+            const tutorsData = await tutorsResponse.json()
+            setTutors(tutorsData.tutors || [])
+            if (tutorsData.tutors && tutorsData.tutors.length > 0) {
+              setSelectedTutor(tutorsData.tutors[0])
+            }
+          }
           
           if (sessionsResponse.ok) {
             const sessionsData = await sessionsResponse.json()
             setSessions(sessionsData.sessions || [])
           }
-          
-          if (availabilityResponse.ok) {
-            const availabilityData = await availabilityResponse.json()
-            setAvailabilities(availabilityData.availabilities || [])
-          }
-        } else {
-          const errorData = await tutorResponse.json()
-          console.error('Error fetching tutor:', errorData)
         }
       } catch (error) {
         console.error('Error fetching data:', error)
       }
     }
 
-    fetchTutorAndData()
-  }, [userData?.id, getToken])
+    fetchData()
+  }, [userData?.id, userData?.role, getToken])
+  
+  useEffect(() => {
+    const fetchTutorAvailability = async () => {
+      if (userData?.role === 'student' && selectedTutor?.id) {
+        try {
+          const [availabilityResponse, tutorSessionsResponse] = await Promise.all([
+            api.getAvailability(getToken, selectedTutor.id),
+            api.getSessions(getToken, selectedTutor.user_id)
+          ])
+          
+          if (availabilityResponse.ok) {
+            const availabilityData = await availabilityResponse.json()
+            setAvailabilities(availabilityData.availabilities || [])
+          }
+          
+          if (tutorSessionsResponse.ok) {
+            const tutorSessionsData = await tutorSessionsResponse.json()
+            setSessions(prevSessions => {
+              const allSessions = [...prevSessions]
+              const tutorSessions = tutorSessionsData.sessions || []
+              
+              tutorSessions.forEach(ts => {
+                if (!allSessions.find(s => s.id === ts.id)) {
+                  allSessions.push(ts)
+                }
+              })
+              
+              return allSessions
+            })
+          }
+        } catch (error) {
+          console.error('Error fetching tutor availability:', error)
+        }
+      }
+    }
+    
+    fetchTutorAvailability()
+  }, [selectedTutor?.id, selectedTutor?.user_id, userData?.role, getToken])
 
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
@@ -319,12 +379,54 @@ function Sessions({ userData }) {
             timeSort: slot.start.getTime(),
             type: av.session_type,
             isAvailable: !hasSession,
+            availability: av,
+            slotIndex: slotIndex,
             session: sessionInSlot ? {
               id: sessionInSlot.id,
               status: sessionInSlot.status === 'booked' ? 'booked' : 'available',
               type: sessionInSlot.session_type
             } : null
           })
+        })
+      }
+    })
+    
+    sessions.forEach(session => {
+      if (!session.start_time) return
+      
+      const sessionTimeMatch = session.start_time.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):\d{2}/)
+      if (!sessionTimeMatch) return
+      
+      const [, sYear, sMonth, sDay, sHour, sMin] = sessionTimeMatch.map(Number)
+      const sessionDateKey = `${sYear}-${String(sMonth).padStart(2, '0')}-${String(sDay).padStart(2, '0')}`
+      
+      if (sessionDateKey !== dateKey) return
+      
+      const alreadyInSlots = slots.some(slot => 
+        slot.session && slot.session.id === session.id
+      )
+      
+      if (!alreadyInSlots) {
+        const slotHour12 = sHour === 0 ? 12 : (sHour > 12 ? sHour - 12 : sHour)
+        const ampm = sHour >= 12 ? 'PM' : 'AM'
+        const slotTime = `${slotHour12}:${String(sMin).padStart(2, '0')} ${ampm}`
+        
+        const baseDate = new Date(date)
+        baseDate.setHours(sHour, sMin, 0, 0)
+        
+        slots.push({
+          id: `slot-session-${session.id}`,
+          time: slotTime,
+          timeSort: baseDate.getTime(),
+          type: session.session_type,
+          isAvailable: false,
+          availability: null,
+          slotIndex: 0,
+          session: {
+            id: session.id,
+            status: session.status,
+            type: session.session_type
+          }
         })
       }
     })
@@ -434,20 +536,14 @@ function Sessions({ userData }) {
         return
       }
       
-      // Create date in local timezone (America/New_York) to avoid timezone shift
-      // Format: YYYY-MM-DDTHH:mm:ss (local time, no timezone offset)
       const [startHour, startMin] = formData.startTime.split(':').map(Number)
       const [endHour, endMin] = formData.endTime.split(':').map(Number)
       
-      // Create date string in YYYY-MM-DD format
       const dateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
       
-      // Create datetime strings in local time (America/New_York timezone)
-      // Backend expects ISO format and will convert from America/New_York to UTC
       const startTimeStr = `${dateStr}T${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`
       const endTimeStr = `${dateStr}T${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}:00`
       
-      // Calculate day of week from the date
       const dateObj = new Date(year, month - 1, day)
       const dayOfWeek = dateObj.getDay()
       
@@ -487,10 +583,305 @@ function Sessions({ userData }) {
       alert(`Error: ${error.message}`)
     }
   }
+  
+  const handleBookSession = async (slot, date) => {
+    if (!slot.isAvailable || slot.session) return
+    
+    setSelectedSlot({ ...slot, date })
+    setIsBookingModalOpen(true)
+  }
+  
+  const confirmBooking = async (course) => {
+    if (!selectedSlot || !selectedTutor) return
+    
+    try {
+      const av = selectedSlot.availability
+      if (!av || !av.start_time) {
+        alert('Availability data is missing')
+        return
+      }
+      
+      const dateKey = formatDateKey(selectedSlot.date)
+      const [year, month, day] = dateKey.split('-')
+      
+      const avStartTime = av.start_time.split('T')[1]
+      const [avStartHour, avStartMin] = avStartTime.split(':').map(Number)
+      
+      const slotStartMinutes = avStartHour * 60 + avStartMin + (selectedSlot.slotIndex * 20)
+      const slotEndMinutes = slotStartMinutes + 20
+      
+      const startHour = Math.floor(slotStartMinutes / 60)
+      const startMin = slotStartMinutes % 60
+      const endHour = Math.floor(slotEndMinutes / 60)
+      const endMin = slotEndMinutes % 60
+      
+      const startTimeStr = `${year}-${month}-${day}T${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`
+      const endTimeStr = `${year}-${month}-${day}T${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}:00`
+      
+      const availabilityId = av.id
+      
+      const bookingData = {
+        availability_id: availabilityId,
+        start_time: startTimeStr,
+        end_time: endTimeStr,
+        course: course || ''
+      }
+      
+      const response = await api.bookSession(getToken, bookingData)
+      
+      if (response.ok) {
+        const data = await response.json()
+        setIsBookingModalOpen(false)
+        setSelectedSlot(null)
+        
+        const [availabilityResponse, tutorSessionsResponse] = await Promise.all([
+          api.getAvailability(getToken, selectedTutor.id),
+          api.getSessions(getToken, selectedTutor.user_id)
+        ])
+        
+        if (availabilityResponse.ok) {
+          const availabilityData = await availabilityResponse.json()
+          setAvailabilities(availabilityData.availabilities || [])
+        }
+        
+        if (tutorSessionsResponse.ok) {
+          const tutorSessionsData = await tutorSessionsResponse.json()
+          setSessions(tutorSessionsData.sessions || [])
+        }
+      } else {
+        const errorData = await response.json()
+        alert(`Error: ${errorData.error || 'Failed to book session'}`)
+      }
+    } catch (error) {
+      console.error('Error booking session:', error)
+      alert(`Error: ${error.message}`)
+    }
+  }
+
+  if (userData?.role === 'student') {
+    return (
+      <div className="p-8">
+        <div className="mb-6 flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground mb-2">
+              Availability
+            </h1>
+            <p className="text-muted-foreground">
+              View tutor availability and book sessions
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant={viewMode === 'month' ? 'default' : 'outline'}
+              onClick={() => setViewMode('month')}
+            >
+              Month View
+            </Button>
+            <Button
+              variant={viewMode === 'week' ? 'default' : 'outline'}
+              onClick={() => setViewMode('week')}
+            >
+              Week View
+            </Button>
+          </div>
+        </div>
+
+        {tutors.length > 0 && (
+          <Card className="p-6 mb-6">
+            <h2 className="text-lg font-semibold text-foreground mb-4">Select Tutor</h2>
+            <p className="text-sm text-muted-foreground mb-4">Choose a tutor to view their availability</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {tutors.map((tutor) => (
+                <div
+                  key={tutor.id}
+                  onClick={() => setSelectedTutor(tutor)}
+                  className={cn(
+                    "p-4 border rounded-lg cursor-pointer transition-all",
+                    selectedTutor?.id === tutor.id
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/50"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                      <span className="text-lg font-semibold">{tutor.user?.name?.[0] || 'T'}</span>
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium text-foreground">{tutor.user?.name || 'Tutor'}</div>
+                      <div className="text-sm text-muted-foreground">{tutor.user?.class_name || 'CN126, CN127'}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        {tutor.session_type === 'online' ? (
+                          <><Monitor className="w-3 h-3" /><span className="text-xs">Online</span></>
+                        ) : tutor.session_type === 'in-person' ? (
+                          <><MapPin className="w-3 h-3" /><span className="text-xs">In-Person</span></>
+                        ) : (
+                          <><Monitor className="w-3 h-3" /><MapPin className="w-3 h-3" /></>
+                        )}
+                      </div>
+                    </div>
+                    {selectedTutor?.id === tutor.id && (
+                      <div className="text-xs font-medium px-2 py-1 bg-primary text-primary-foreground rounded">
+                        Selected
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {selectedTutor && (
+          <>
+            <div className="mb-6 flex items-center gap-4">
+              <Calendar className="w-5 h-5 text-foreground" />
+              <span className="text-lg font-medium text-foreground">
+                {monthYear} - {selectedTutor.user?.name}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => navigateWeek(-1)}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => navigateWeek(1)}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            <Card className="p-6">
+              <div className="grid grid-cols-7 gap-4">
+                {weekDays.map((day, index) => {
+                  const timeSlots = getTimeSlotsForDay(day)
+                  return (
+                    <div
+                      key={index}
+                      className="flex flex-col p-3 border border-border rounded-lg bg-card"
+                    >
+                      <div className="text-xs font-medium text-muted-foreground mb-1 text-center">
+                        {formatDayName(day)}
+                      </div>
+                      <div className="text-lg font-bold text-foreground mb-3 text-center">
+                        {formatDayNumber(day)}
+                      </div>
+                      <div className="space-y-2">
+                        {timeSlots.length > 0 ? (
+                          timeSlots.map((slot) => (
+                            <div
+                              key={slot.id}
+                              onClick={() => slot.isAvailable && !slot.session && handleBookSession(slot, day)}
+                              className={cn(
+                                "p-1.5 rounded text-[10px] flex items-center gap-1.5",
+                                slot.session && slot.session.status === 'booked'
+                                  ? "bg-red-100 text-red-800 border border-red-200 cursor-not-allowed"
+                                  : slot.isAvailable
+                                  ? "bg-green-100 text-green-800 border border-green-200 cursor-pointer hover:bg-green-200"
+                                  : "bg-gray-100 text-gray-600 border border-gray-200 cursor-not-allowed"
+                              )}
+                            >
+                              {slot.type === 'online' ? (
+                                <Monitor className="w-2.5 h-2.5 flex-shrink-0" />
+                              ) : (
+                                <MapPin className="w-2.5 h-2.5 flex-shrink-0" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium truncate text-[10px]">{slot.time}</div>
+                                <div className="text-[9px] opacity-75">
+                                  {slot.session && slot.session.status === 'booked' ? 'Booked' : 'Available'}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-xs text-muted-foreground text-center py-3">
+                            No availability
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="mt-6 flex gap-6">
+                <div className="flex items-center gap-2">
+                  <Monitor className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Online</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">In-Person</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-green-100 border border-green-200 rounded"></div>
+                  <span className="text-sm text-muted-foreground">Available</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-red-100 border border-red-200 rounded"></div>
+                  <span className="text-sm text-muted-foreground">Booked</span>
+                </div>
+              </div>
+            </Card>
+          </>
+        )}
+
+        <Dialog open={isBookingModalOpen} onOpenChange={setIsBookingModalOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Book Session</DialogTitle>
+              <DialogDescription>
+                Confirm your session booking with {selectedTutor?.user?.name}
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.target)
+              confirmBooking(formData.get('course'))
+            }}>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label>Date & Time</Label>
+                  <div className="text-sm text-muted-foreground">
+                    {selectedSlot?.date && formatDateKey(selectedSlot.date)} at {selectedSlot?.time}
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="course">Course (Optional)</Label>
+                  <Input
+                    id="course"
+                    name="course"
+                    placeholder="e.g., CN126"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsBookingModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  Confirm Booking
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+    )
+  }
 
   return (
     <div className="p-8">
-      {/* Header Section */}
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground mb-2">

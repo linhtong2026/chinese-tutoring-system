@@ -29,17 +29,37 @@ def book_session():
         return jsonify({"error": "Availability not found"}), 404
 
     try:
-        start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
-        end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
+        start_time = datetime.fromisoformat(start_time_str)
+        end_time = datetime.fromisoformat(end_time_str)
     except ValueError:
         return jsonify({"error": "Invalid datetime format"}), 400
 
     if end_time <= start_time:
         return jsonify({"error": "end_time must be after start_time"}), 400
 
-    # Ensure requested window is within availability window
-    if not (availability.start_time <= start_time and end_time <= availability.end_time):
-        return jsonify({"error": "Requested time outside availability window"}), 409
+    print(f"DEBUG: Booking request received")
+    print(f"DEBUG: Availability ID: {availability_id}")
+    print(f"DEBUG: Availability is_recurring: {availability.is_recurring}")
+    print(f"DEBUG: Availability start_time: {availability.start_time}")
+    print(f"DEBUG: Availability end_time: {availability.end_time}")
+    print(f"DEBUG: Requested start_time: {start_time}")
+    print(f"DEBUG: Requested end_time: {end_time}")
+
+    if availability.is_recurring:
+        av_start_time = availability.start_time.time()
+        av_end_time = availability.end_time.time()
+        req_start_time = start_time.time()
+        req_end_time = end_time.time()
+        
+        print(f"DEBUG: Recurring availability - comparing times only")
+        print(f"DEBUG: Availability time window: {av_start_time} to {av_end_time}")
+        print(f"DEBUG: Requested time window: {req_start_time} to {req_end_time}")
+        
+        if not (av_start_time <= req_start_time and req_end_time <= av_end_time):
+            return jsonify({"error": "Requested time outside availability window"}), 409
+    else:
+        if not (availability.start_time <= start_time and end_time <= availability.end_time):
+            return jsonify({"error": "Requested time outside availability window"}), 409
 
     # Find the tutor's user_id from Availability -> Tutor -> User
     tutor_profile: Tutor = availability.tutor
@@ -67,36 +87,7 @@ def book_session():
         status='booked'
     )
     db.session.add(new_session)
-
-    # Adjust the availability: shrink or split around the booked window
-    av_start = availability.start_time
-    av_end = availability.end_time
-
-    left_remains = av_start < start_time
-    right_remains = end_time < av_end
-
-    if left_remains and right_remains:
-        # Split into two availability blocks
-        availability.end_time = start_time
-        new_av = Availability(
-            tutor_id=availability.tutor_id,
-            day_of_week=availability.day_of_week,
-            start_time=end_time,
-            end_time=av_end,
-            session_type=availability.session_type,
-            is_recurring=availability.is_recurring
-        )
-        db.session.add(new_av)
-    elif left_remains and not right_remains:
-        # Keep left part
-        availability.end_time = start_time
-    elif right_remains and not left_remains:
-        # Keep right part
-        availability.start_time = end_time
-    else:
-        # Booking consumed the whole availability
-        db.session.delete(availability)
-
+    
     db.session.commit()
     return jsonify({"session": new_session.to_dict()}), 201
 
@@ -105,14 +96,22 @@ def book_session():
 @require_auth
 def tutor_list_sessions():
     current_user: User = getattr(request, 'db_user', None)
-    if not current_user or current_user.role != 'tutor':
-        return jsonify({"error": "Forbidden"}), 403
+    if not current_user:
+        return jsonify({"error": "Unauthorized"}), 401
 
-    statuses = request.args.get("status")  # e.g. "available,booked"
+    tutor_id = request.args.get("tutor_id")
+    
+    if current_user.role == 'tutor':
+        q = Session.query.filter(Session.tutor_id == current_user.id)
+    elif tutor_id:
+        q = Session.query.filter(Session.tutor_id == tutor_id)
+    else:
+        return jsonify({"error": "tutor_id is required for non-tutor users"}), 400
+
+    statuses = request.args.get("status")
     dt_from = request.args.get("from")
     dt_to = request.args.get("to")
 
-    q = Session.query.filter(Session.tutor_id == current_user.id)
     if statuses:
         allowed = [s.strip() for s in statuses.split(',') if s.strip()]
         if allowed:
@@ -120,7 +119,7 @@ def tutor_list_sessions():
 
     def parse_dt(s):
         try:
-            return datetime.fromisoformat(s.replace('Z', '+00:00')) if s else None
+            return datetime.fromisoformat(s) if s else None
         except Exception:
             return None
 
@@ -211,13 +210,13 @@ def update_session(session_id):
     
     if "start_time" in data:
         try:
-            session.start_time = datetime.fromisoformat(data["start_time"].replace('Z', '+00:00'))
+            session.start_time = datetime.fromisoformat(data["start_time"])
         except ValueError:
             return jsonify({"error": "Invalid datetime format for start_time"}), 400
     
     if "end_time" in data:
         try:
-            session.end_time = datetime.fromisoformat(data["end_time"].replace('Z', '+00:00'))
+            session.end_time = datetime.fromisoformat(data["end_time"])
         except ValueError:
             return jsonify({"error": "Invalid datetime format for end_time"}), 400
     
@@ -240,4 +239,25 @@ def delete_session(session_id):
     db.session.commit()
     
     return jsonify({"success": True, "message": "Session deleted"})
+
+
+@session_bp.route("/api/sessions/<int:session_id>/book", methods=["POST"])
+@require_auth
+def book_existing_session(session_id):
+    current_user: User = getattr(request, 'db_user', None)
+    if not current_user or current_user.role != 'student':
+        return jsonify({"error": "Forbidden"}), 403
+
+    session = Session.query.get(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+
+    if session.status == 'booked':
+        return jsonify({"error": "Session already booked"}), 409
+
+    session.status = 'booked'
+    session.student_id = current_user.id
+    db.session.commit()
+
+    return jsonify({"success": True, "session": session.to_dict()})
 

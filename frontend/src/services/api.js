@@ -86,6 +86,25 @@ class ApiService {
     })
     return response
   }
+
+  async getTutors(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/tutors`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async bookSession(getToken, data) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/sessions/book`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data)
+    })
+    return response
+  }
 }
 
 export default new ApiService()

@@ -206,7 +206,6 @@ def get_tutor_by_user(user_id):
     """Get or create Tutor record for a user"""
     db_user = request.db_user
 
-    # Users can only access their own tutor profile, or admins can access any
     if db_user.id != user_id and db_user.role != "admin":
         return jsonify({"error": "Forbidden"}), 403
 
@@ -214,10 +213,8 @@ def get_tutor_by_user(user_id):
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # Get or create Tutor record
     tutor = Tutor.query.filter_by(user_id=user_id).first()
     if not tutor:
-        # Create Tutor record if user is a tutor
         if user.role == "tutor":
             tutor = Tutor(user_id=user_id)
             db.session.add(tutor)
@@ -226,6 +223,27 @@ def get_tutor_by_user(user_id):
             return jsonify({"error": "User is not a tutor"}), 400
 
     return jsonify({"tutor": tutor.to_dict()})
+
+
+@app.route("/api/tutors")
+@require_auth
+def get_tutors():
+    """Get all tutors with their user information"""
+    tutors = Tutor.query.all()
+    tutors_data = []
+    
+    for tutor in tutors:
+        tutor_dict = tutor.to_dict()
+        if tutor.user:
+            tutor_dict['user'] = {
+                'id': tutor.user.id,
+                'name': tutor.user.name,
+                'email': tutor.user.email,
+                'class_name': tutor.user.class_name
+            }
+        tutors_data.append(tutor_dict)
+    
+    return jsonify({"success": True, "tutors": tutors_data})
 
 
 if __name__ == "__main__":
