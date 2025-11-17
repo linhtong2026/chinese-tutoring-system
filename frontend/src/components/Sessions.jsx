@@ -1064,10 +1064,26 @@ function Sessions({ userData }) {
             Manage your tutoring schedule and time slots
           </p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Add Availability
-        </Button>
+        <div className="flex gap-2">
+          <div className="flex gap-2 mr-4">
+            <Button
+              variant={viewMode === 'month' ? 'default' : 'outline'}
+              onClick={() => setViewMode('month')}
+            >
+              Month View
+            </Button>
+            <Button
+              variant={viewMode === 'week' ? 'default' : 'outline'}
+              onClick={() => setViewMode('week')}
+            >
+              Week View
+            </Button>
+          </div>
+          <Button onClick={() => setIsModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Availability
+          </Button>
+        </div>
       </div>
 
       {/* Calendar Navigation */}
@@ -1076,112 +1092,206 @@ function Sessions({ userData }) {
         <span className="text-lg font-medium text-foreground">
           {monthYear}
         </span>
-        <div className="flex gap-2">
+        <div className="flex gap-2 ml-auto">
           <Button
             variant="outline"
             size="icon"
-            onClick={() => navigateWeek(-1)}
+            onClick={() => viewMode === 'month' ? navigateMonth(-1) : navigateWeek(-1)}
           >
             <ChevronLeft className="w-4 h-4" />
           </Button>
           <Button
             variant="outline"
             size="icon"
-            onClick={() => navigateWeek(1)}
+            onClick={() => viewMode === 'month' ? navigateMonth(1) : navigateWeek(1)}
           >
             <ChevronRight className="w-4 h-4" />
           </Button>
         </div>
       </div>
 
-      {/* Weekly Calendar Grid */}
       <Card className="p-6">
-        <div className="grid grid-cols-7 gap-4">
-          {weekDays.map((day, index) => {
-            const timeSlots = getTimeSlotsForDay(day)
-            const now = new Date()
-            const today = new Date()
-            today.setHours(0, 0, 0, 0)
-            const dayDate = new Date(day)
-            dayDate.setHours(0, 0, 0, 0)
-            const isPastDate = dayDate < today
-            const isToday = dayDate.getTime() === today.getTime()
-            
-            return (
-              <div
-                key={index}
-                className={cn(
-                  "flex flex-col p-3 border border-border rounded-lg",
-                  isPastDate ? "bg-muted/50" : "bg-card"
-                )}
-              >
-                <div className={cn(
-                  "text-xs font-medium mb-1 text-center",
-                  isPastDate ? "text-muted-foreground/50" : "text-muted-foreground"
-                )}>
-                  {formatDayName(day)}
+        {viewMode === 'month' ? (
+          <>
+            <div className="grid grid-cols-7 gap-2 mb-4">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                <div key={day} className="text-xs font-medium text-muted-foreground text-center py-2">
+                  {day}
                 </div>
-                <div className={cn(
-                  "text-lg font-bold mb-3 text-center",
-                  isPastDate ? "text-foreground/30" : "text-foreground"
-                )}>
-                  {formatDayNumber(day)}
-                </div>
-                <div className="space-y-2">
-                  {timeSlots.length > 0 ? (
-                    timeSlots.map((slot) => {
-                      const slotDateTime = new Date(day)
-                      const timeMatch = slot.time.match(/(\d+):(\d+)\s*(AM|PM)/)
-                      if (timeMatch) {
-                        let hours = parseInt(timeMatch[1])
-                        const minutes = parseInt(timeMatch[2])
-                        const period = timeMatch[3]
-                        if (period === 'PM' && hours !== 12) hours += 12
-                        if (period === 'AM' && hours === 12) hours = 0
-                        slotDateTime.setHours(hours, minutes, 0, 0)
-                      }
-                      const isPastSlot = isPastDate || (isToday && slotDateTime < now)
-                      
-                      return (
-                        <div
-                          key={slot.id}
-                          className={cn(
-                            "p-1.5 rounded text-[10px] flex items-center gap-1.5",
-                            isPastSlot
-                              ? "bg-gray-100 text-gray-400 border border-gray-200 opacity-50"
-                              : slot.session && slot.session.status === 'booked'
-                              ? "bg-green-100 text-green-800 border border-green-200"
-                              : slot.session
-                              ? "bg-blue-100 text-blue-800 border border-blue-200"
-                              : "bg-blue-100 text-blue-800 border border-blue-200"
-                          )}
-                        >
-                          {slot.type === 'online' ? (
-                            <Monitor className="w-2.5 h-2.5 flex-shrink-0" />
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-2">
+              {monthDays.map((day, index) => {
+                const timeSlots = day ? getTimeSlotsForDay(day) : []
+                const now = new Date()
+                const isToday = day && formatDateKey(day) === formatDateKey(new Date())
+                const today = new Date()
+                today.setHours(0, 0, 0, 0)
+                const dayDate = day ? new Date(day) : null
+                if (dayDate) dayDate.setHours(0, 0, 0, 0)
+                const isPastDate = dayDate && dayDate < today
+                const isTodayDate = dayDate && dayDate.getTime() === today.getTime()
+                
+                return (
+                  <div
+                    key={index}
+                    className={cn(
+                      "min-h-[120px] p-2 border rounded-lg",
+                      !day ? "bg-muted/30" : isPastDate ? "bg-muted/50" : "bg-card",
+                      isToday && "border-primary"
+                    )}
+                  >
+                    {day && (
+                      <>
+                        <div className={cn(
+                          "text-sm font-medium mb-2 text-center",
+                          isToday ? "text-primary" : isPastDate ? "text-foreground/30" : "text-foreground"
+                        )}>
+                          {day.getDate()}
+                        </div>
+                        <div className="space-y-1">
+                          {timeSlots.length > 0 ? (
+                            timeSlots.slice(0, 3).map((slot) => {
+                              const slotDateTime = new Date(day)
+                              const timeMatch = slot.time.match(/(\d+):(\d+)\s*(AM|PM)/)
+                              if (timeMatch) {
+                                let hours = parseInt(timeMatch[1])
+                                const minutes = parseInt(timeMatch[2])
+                                const period = timeMatch[3]
+                                if (period === 'PM' && hours !== 12) hours += 12
+                                if (period === 'AM' && hours === 12) hours = 0
+                                slotDateTime.setHours(hours, minutes, 0, 0)
+                              }
+                              const isPastSlot = isPastDate || (isTodayDate && slotDateTime < now)
+                              
+                              return (
+                                <div
+                                  key={slot.id}
+                                  className={cn(
+                                    "p-1 rounded text-[9px] flex items-center gap-1",
+                                    isPastSlot
+                                      ? "bg-gray-100 text-gray-400 border border-gray-200 opacity-50"
+                                      : slot.session && slot.session.status === 'booked'
+                                      ? "bg-green-100 text-green-800 border border-green-200"
+                                      : slot.session
+                                      ? "bg-blue-100 text-blue-800 border border-blue-200"
+                                      : "bg-blue-100 text-blue-800 border border-blue-200"
+                                  )}
+                                >
+                                  {slot.type === 'online' ? (
+                                    <Monitor className="w-2 h-2 flex-shrink-0" />
+                                  ) : (
+                                    <MapPin className="w-2 h-2 flex-shrink-0" />
+                                  )}
+                                  <span className="truncate">{slot.time}</span>
+                                </div>
+                              )
+                            })
                           ) : (
-                            <MapPin className="w-2.5 h-2.5 flex-shrink-0" />
+                            <div className="text-[9px] text-muted-foreground text-center py-2">
+                              No slots
+                            </div>
                           )}
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium truncate text-[10px]">{slot.time}</div>
-                            <div className="text-[9px] opacity-75">
-                              {slot.session && slot.session.status === 'booked' ? 'Booked' : slot.session ? 'Available Session' : 'Available'}
+                          {timeSlots.length > 3 && (
+                            <div className="text-[8px] text-muted-foreground text-center">
+                              +{timeSlots.length - 3} more
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        ) : (
+          <div className="grid grid-cols-7 gap-4">
+            {weekDays.map((day, index) => {
+              const timeSlots = getTimeSlotsForDay(day)
+              const now = new Date()
+              const today = new Date()
+              today.setHours(0, 0, 0, 0)
+              const dayDate = new Date(day)
+              dayDate.setHours(0, 0, 0, 0)
+              const isPastDate = dayDate < today
+              const isToday = dayDate.getTime() === today.getTime()
+              
+              return (
+                <div
+                  key={index}
+                  className={cn(
+                    "flex flex-col p-3 border border-border rounded-lg",
+                    isPastDate ? "bg-muted/50" : "bg-card"
+                  )}
+                >
+                  <div className={cn(
+                    "text-xs font-medium mb-1 text-center",
+                    isPastDate ? "text-muted-foreground/50" : "text-muted-foreground"
+                  )}>
+                    {formatDayName(day)}
+                  </div>
+                  <div className={cn(
+                    "text-lg font-bold mb-3 text-center",
+                    isPastDate ? "text-foreground/30" : "text-foreground"
+                  )}>
+                    {formatDayNumber(day)}
+                  </div>
+                  <div className="space-y-2">
+                    {timeSlots.length > 0 ? (
+                      timeSlots.map((slot) => {
+                        const slotDateTime = new Date(day)
+                        const timeMatch = slot.time.match(/(\d+):(\d+)\s*(AM|PM)/)
+                        if (timeMatch) {
+                          let hours = parseInt(timeMatch[1])
+                          const minutes = parseInt(timeMatch[2])
+                          const period = timeMatch[3]
+                          if (period === 'PM' && hours !== 12) hours += 12
+                          if (period === 'AM' && hours === 12) hours = 0
+                          slotDateTime.setHours(hours, minutes, 0, 0)
+                        }
+                        const isPastSlot = isPastDate || (isToday && slotDateTime < now)
+                        
+                        return (
+                          <div
+                            key={slot.id}
+                            className={cn(
+                              "p-1.5 rounded text-[10px] flex items-center gap-1.5",
+                              isPastSlot
+                                ? "bg-gray-100 text-gray-400 border border-gray-200 opacity-50"
+                                : slot.session && slot.session.status === 'booked'
+                                ? "bg-green-100 text-green-800 border border-green-200"
+                                : slot.session
+                                ? "bg-blue-100 text-blue-800 border border-blue-200"
+                                : "bg-blue-100 text-blue-800 border border-blue-200"
+                            )}
+                          >
+                            {slot.type === 'online' ? (
+                              <Monitor className="w-2.5 h-2.5 flex-shrink-0" />
+                            ) : (
+                              <MapPin className="w-2.5 h-2.5 flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate text-[10px]">{slot.time}</div>
+                              <div className="text-[9px] opacity-75">
+                                {slot.session && slot.session.status === 'booked' ? 'Booked' : slot.session ? 'Available Session' : 'Available'}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )
-                    })
-                  ) : (
-                    <div className="text-xs text-muted-foreground text-center py-3">
-                      No availability
-                    </div>
-                  )}
+                        )
+                      })
+                    ) : (
+                      <div className="text-xs text-muted-foreground text-center py-3">
+                        No availability
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        )}
 
-        {/* Legend */}
         <div className="mt-6 flex gap-6">
           <div className="flex items-center gap-2">
             <Monitor className="w-4 h-4 text-muted-foreground" />
