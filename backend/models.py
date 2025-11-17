@@ -32,6 +32,12 @@ class User(db.Model):
             )
             db.session.add(user)
             db.session.commit()
+        else:
+            if name and (not user.name or user.name != name):
+                user.name = name
+            if email and (not user.email or user.email != email):
+                user.email = email
+            db.session.commit()
         return user
     
     def to_dict(self):
@@ -109,10 +115,15 @@ class Session(db.Model):
     feedbacks = db.relationship('Feedback', backref='session', lazy='dynamic', cascade='all, delete-orphan')
     
     def to_dict(self):
+        student_name = None
+        if self.student_id and self.student_user:
+            student_name = self.student_user.name
+        
         return {
             'id': self.id,
             'tutor_id': self.tutor_id,
             'student_id': self.student_id,
+            'student_name': student_name,
             'course': self.course,
             'session_type': self.session_type,
             'start_time': self.start_time.isoformat() if self.start_time else None,

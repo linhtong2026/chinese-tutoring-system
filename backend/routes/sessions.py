@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from models import db, Session, User, Availability, Tutor
+from models import db, Session, User, Availability, Tutor, SessionNote
 from auth import require_auth
 from datetime import datetime
 
@@ -260,4 +260,92 @@ def book_existing_session(session_id):
     db.session.commit()
 
     return jsonify({"success": True, "session": session.to_dict()})
+
+
+@session_bp.route("/api/session-notes", methods=["POST"])
+@require_auth
+def create_session_note():
+    current_user: User = getattr(request, 'db_user', None)
+    if not current_user or current_user.role != 'tutor':
+        return jsonify({"error": "Forbidden"}), 403
+
+    data = request.get_json()
+    session_id = data.get("session_id")
+    attendance_status = data.get("attendance_status")
+    notes = data.get("notes")
+
+    if not session_id:
+        return jsonify({"error": "session_id is required"}), 400
+
+    session = Session.query.get(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+
+    if session.tutor_id != current_user.id:
+        return jsonify({"error": "You can only add notes to your own sessions"}), 403
+
+    existing_note = SessionNote.query.filter_by(
+        session_id=session_id,
+        tutor_id=current_user.id
+    ).first()
+    
+    if existing_note:
+        return jsonify({"error": "Note already exists for this session"}), 409
+
+    new_note = SessionNote(
+        session_id=session_id,
+        tutor_id=current_user.id,
+        attendance_status=attendance_status,
+        notes=notes
+    )
+    db.session.add(new_note)
+    db.session.commit()
+
+    return jsonify({"success": True, "note": new_note.to_dict()}), 201
+
+
+@session_bp.route("/api/session-notes/<int:note_id>", methods=["PUT"])
+@require_auth
+def update_session_note(note_id):
+    current_user: User = getattr(request, 'db_user', None)
+    if not current_user or current_user.role != 'tutor':
+        return jsonify({"error": "Forbidden"}), 403
+
+    note = SessionNote.query.get(note_id)
+    if not note:
+        return jsonify({"error": "Note not found"}), 404
+
+    if note.tutor_id != current_user.id:
+        return jsonify({"error": "You can only update your own notes"}), 403
+
+    data = request.get_json()
+    
+    if "attendance_status" in data:
+        note.attendance_status = data["attendance_status"]
+    
+    if "notes" in data:
+        note.notes = data["notes"]
+    
+    db.session.commit()
+
+    return jsonify({"success": True, "note": note.to_dict()})
+
+
+@session_bp.route("/api/sessions/<int:session_id>/note", methods=["GET"])
+@require_auth
+def get_session_note(session_id):
+    current_user: User = getattr(request, 'db_user', None)
+    if not current_user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    session = Session.query.get(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+
+    note = SessionNote.query.filter_by(session_id=session_id).first()
+    
+    if not note:
+        return jsonify({"success": True, "note": None})
+    
+    return jsonify({"success": True, "note": note.to_dict()})
 

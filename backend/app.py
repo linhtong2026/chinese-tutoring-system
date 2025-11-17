@@ -169,10 +169,16 @@ def complete_onboarding():
     data = request.get_json()
     db_user = request.db_user
     clerk_user_id = request.clerk_user.get("sub")
+    clerk_name = request.clerk_user.get("name", "")
+    clerk_email = request.clerk_user.get("email", "")
 
     language = data.get("language", "en")
     class_name = data.get("class_name")
 
+    if clerk_name:
+        db_user.name = clerk_name
+    if clerk_email:
+        db_user.email = clerk_email
     db_user.role = "student"
     db_user.class_name = class_name
     db_user.language_preference = language
