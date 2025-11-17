@@ -273,6 +273,7 @@ def create_session_note():
     session_id = data.get("session_id")
     attendance_status = data.get("attendance_status")
     notes = data.get("notes")
+    student_feedback = data.get("student_feedback")
 
     if not session_id:
         return jsonify({"error": "session_id is required"}), 400
@@ -296,7 +297,8 @@ def create_session_note():
         session_id=session_id,
         tutor_id=current_user.id,
         attendance_status=attendance_status,
-        notes=notes
+        notes=notes,
+        student_feedback=student_feedback
     )
     db.session.add(new_note)
     db.session.commit()
@@ -325,6 +327,9 @@ def update_session_note(note_id):
     
     if "notes" in data:
         note.notes = data["notes"]
+    
+    if "student_feedback" in data:
+        note.student_feedback = data["student_feedback"]
     
     db.session.commit()
 

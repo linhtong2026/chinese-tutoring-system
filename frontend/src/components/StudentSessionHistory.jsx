@@ -1,30 +1,27 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@clerk/clerk-react'
-import { Search, Edit, Clock, Monitor, MapPin, Calendar } from 'lucide-react'
+import { Search, Eye, Clock, Monitor, MapPin, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import api from '@/services/api'
 
-function SessionHistory({ userData }) {
+function StudentSessionHistory({ userData }) {
   const { getToken } = useAuth()
   const [sessions, setSessions] = useState([])
   const [filteredSessions, setFilteredSessions] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
-  const [isLogModalOpen, setIsLogModalOpen] = useState(false)
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false)
   const [selectedSession, setSelectedSession] = useState(null)
-  const [sessionNote, setSessionNote] = useState({ attendance_status: '', notes: '', student_feedback: '' })
-  const [existingNote, setExistingNote] = useState(null)
+  const [sessionNote, setSessionNote] = useState(null)
 
   useEffect(() => {
     const fetchSessions = async () => {
       if (!userData?.id) return
 
       try {
-        const response = await api.getSessions(getToken, userData.id)
+        const response = await api.getStudentSessions(getToken)
         if (response.ok) {
           const data = await response.json()
           const now = new Date()
@@ -40,7 +37,7 @@ function SessionHistory({ userData }) {
       }
     }
 
-    if (userData?.role === 'tutor') {
+    if (userData?.role === 'student') {
       fetchSessions()
       const intervalId = setInterval(fetchSessions, 30000)
       return () => clearInterval(intervalId)
@@ -53,8 +50,7 @@ function SessionHistory({ userData }) {
     } else {
       const term = searchTerm.toLowerCase()
       const filtered = sessions.filter(session => 
-        session.course?.toLowerCase().includes(term) ||
-        session.student_name?.toLowerCase().includes(term)
+        session.course?.toLowerCase().includes(term)
       )
       setFilteredSessions(filtered)
     }
@@ -85,97 +81,49 @@ function SessionHistory({ userData }) {
     return `${diff}m`
   }
 
-  const handleLogSession = async (session) => {
+  const handleViewFeedback = async (session) => {
     setSelectedSession(session)
     
     try {
       const noteResponse = await api.getSessionNote(getToken, session.id)
       if (noteResponse.ok) {
         const noteData = await noteResponse.json()
-        if (noteData.note) {
-          setExistingNote(noteData.note)
-          setSessionNote({
-            attendance_status: noteData.note.attendance_status || '',
-            notes: noteData.note.notes || '',
-            student_feedback: noteData.note.student_feedback || ''
-          })
-        } else {
-          setExistingNote(null)
-          setSessionNote({ attendance_status: '', notes: '', student_feedback: '' })
-        }
+        setSessionNote(noteData.note || null)
       } else {
-        setExistingNote(null)
-        setSessionNote({ attendance_status: '', notes: '', student_feedback: '' })
+        setSessionNote(null)
       }
     } catch (error) {
       console.error('Error fetching session note:', error)
-      setExistingNote(null)
-      setSessionNote({ attendance_status: '', notes: '', student_feedback: '' })
+      setSessionNote(null)
     }
     
-    setIsLogModalOpen(true)
+    setIsFeedbackModalOpen(true)
   }
 
-
-  const handleSaveLog = async () => {
-    if (!selectedSession) return
-
-    try {
-      const logData = {
-        session_id: selectedSession.id,
-        attendance_status: sessionNote.attendance_status,
-        notes: sessionNote.notes,
-        student_feedback: sessionNote.student_feedback
-      }
-
-      let response
-      if (existingNote) {
-        response = await api.updateSessionNote(getToken, existingNote.id, logData)
-      } else {
-        response = await api.createSessionNote(getToken, logData)
-      }
-
-      if (response.ok) {
-        setIsLogModalOpen(false)
-        setSelectedSession(null)
-        setSessionNote({ attendance_status: '', notes: '', student_feedback: '' })
-        setExistingNote(null)
-      } else {
-        const errorData = await response.json()
-        alert(`Error: ${errorData.error || 'Failed to save session log'}`)
-      }
-    } catch (error) {
-      console.error('Error saving session log:', error)
-      alert(`Error: ${error.message}`)
-    }
-  }
-
-  if (userData?.role !== 'tutor') {
+  if (userData?.role !== 'student') {
     return (
       <div className="p-8">
-        <p className="text-muted-foreground">This page is only available for tutors.</p>
+        <p className="text-muted-foreground">This page is only available for students.</p>
       </div>
     )
   }
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">
-            Tutoring Sessions
-          </h1>
-          <p className="text-muted-foreground">
-            Track and log your tutoring sessions
-          </p>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-foreground mb-2">
+          My Session History
+        </h1>
+        <p className="text-muted-foreground">
+          View your past tutoring sessions and feedback
+        </p>
       </div>
 
       <div className="mb-6 relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
           type="text"
-          placeholder="Search sessions by course, student, or tutor..."
+          placeholder="Search sessions by course..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="pl-10"
@@ -188,7 +136,7 @@ function SessionHistory({ userData }) {
             All Sessions
           </h2>
           <p className="text-sm text-muted-foreground">
-            Centralized session records and notes
+            Your completed tutoring sessions
           </p>
         </div>
 
@@ -198,7 +146,6 @@ function SessionHistory({ userData }) {
               <tr className="border-b border-border">
                 <th className="text-left py-3 px-2 text-sm font-medium text-foreground w-32">Date</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Course</th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Student Name</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Duration</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Type</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Actions</th>
@@ -219,9 +166,6 @@ function SessionHistory({ userData }) {
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
                       {session.course || '-'}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-foreground">
-                      {session.student_name || 'Unknown'}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-1 text-sm text-foreground">
@@ -248,17 +192,17 @@ function SessionHistory({ userData }) {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleLogSession(session)}
+                        onClick={() => handleViewFeedback(session)}
                       >
-                        <Edit className="w-4 h-4 mr-1" />
-                        Notes
+                        <Eye className="w-4 h-4 mr-1" />
+                        View Feedback
                       </Button>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                  <td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
                     {searchTerm ? 'No sessions found matching your search' : 'No past sessions yet'}
                   </td>
                 </tr>
@@ -268,21 +212,20 @@ function SessionHistory({ userData }) {
         </div>
       </Card>
 
-      <Dialog open={isLogModalOpen} onOpenChange={(open) => {
-        setIsLogModalOpen(open)
+      <Dialog open={isFeedbackModalOpen} onOpenChange={(open) => {
+        setIsFeedbackModalOpen(open)
         if (!open) {
           setSelectedSession(null)
-          setSessionNote({ attendance_status: '', notes: '', student_feedback: '' })
-          setExistingNote(null)
+          setSessionNote(null)
         }
       }}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Session Log</DialogTitle>
+            <DialogTitle>Session Feedback</DialogTitle>
             <DialogDescription>
               {selectedSession 
                 ? `Session on ${formatDate(selectedSession.start_time)} at ${formatTime(selectedSession.start_time)}`
-                : 'Add notes for a tutoring session'}
+                : 'Session details'}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -294,72 +237,53 @@ function SessionHistory({ userData }) {
                     <span className="text-foreground font-medium">{selectedSession.course || '-'}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Student: </span>
-                    <span className="text-foreground font-medium">{selectedSession.student_name || 'Unknown'}</span>
+                    <span className="text-muted-foreground">Duration: </span>
+                    <span className="text-foreground font-medium">{calculateDuration(selectedSession.start_time, selectedSession.end_time)}</span>
                   </div>
                 </div>
               </div>
             )}
-            
-            <div className="grid gap-2">
-              <Label htmlFor="attendance">Attendance Status</Label>
-              <Select
-                value={sessionNote.attendance_status}
-                onValueChange={(value) => setSessionNote({ ...sessionNote, attendance_status: value })}
-              >
-                <SelectTrigger id="attendance">
-                  <SelectValue placeholder="Select attendance status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="present">Present</SelectItem>
-                  <SelectItem value="absent">Absent</SelectItem>
-                  <SelectItem value="late">Late</SelectItem>
-                  <SelectItem value="excused">Excused</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="notes">
-                Session Notes <span className="text-xs text-muted-foreground">(Not visible to students)</span>
-              </Label>
-              <textarea
-                id="notes"
-                value={sessionNote.notes}
-                onChange={(e) => setSessionNote({ ...sessionNote, notes: e.target.value })}
-                placeholder="Add notes about this session..."
-                className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              />
-            </div>
+            {sessionNote ? (
+              <>
+                {sessionNote.attendance_status && (
+                  <div className="grid gap-2">
+                    <span className="text-sm font-medium text-foreground">Attendance</span>
+                    <div className="text-sm text-muted-foreground capitalize">
+                      {sessionNote.attendance_status}
+                    </div>
+                  </div>
+                )}
 
-            <div className="grid gap-2">
-              <Label htmlFor="student_feedback">
-                Student Feedback <span className="text-xs text-muted-foreground">(Visible to students)</span>
-              </Label>
-              <textarea
-                id="student_feedback"
-                value={sessionNote.student_feedback}
-                onChange={(e) => setSessionNote({ ...sessionNote, student_feedback: e.target.value })}
-                placeholder="Add feedback for the student..."
-                className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              />
-            </div>
+                <div className="grid gap-2">
+                  <span className="text-sm font-medium text-foreground">Tutor Feedback</span>
+                  {sessionNote.student_feedback ? (
+                    <div className="text-sm text-foreground bg-muted p-3 rounded-md">
+                      {sessionNote.student_feedback}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground italic">
+                      No feedback provided yet
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground text-center py-4">
+                No feedback available for this session
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
               onClick={() => {
-                setIsLogModalOpen(false)
+                setIsFeedbackModalOpen(false)
                 setSelectedSession(null)
-                setSessionNote({ attendance_status: '', notes: '', student_feedback: '' })
-                setExistingNote(null)
+                setSessionNote(null)
               }}
             >
-              Cancel
-            </Button>
-            <Button onClick={handleSaveLog}>
-              Save Log
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -368,5 +292,5 @@ function SessionHistory({ userData }) {
   )
 }
 
-export default SessionHistory
+export default StudentSessionHistory
 

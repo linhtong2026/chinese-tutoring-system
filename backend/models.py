@@ -141,6 +141,7 @@ class SessionNote(db.Model):
     tutor_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     attendance_status = db.Column(db.String(20))
     notes = db.Column(db.Text)
+    student_feedback = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -151,6 +152,7 @@ class SessionNote(db.Model):
             'tutor_id': self.tutor_id,
             'attendance_status': self.attendance_status,
             'notes': self.notes,
+            'student_feedback': self.student_feedback,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
