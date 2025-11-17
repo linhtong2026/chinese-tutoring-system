@@ -674,7 +674,6 @@ function Sessions({ userData }) {
       const response = await api.bookSession(getToken, bookingData)
       
       if (response.ok) {
-        const data = await response.json()
         setIsBookingModalOpen(false)
         setSelectedSlot(null)
         
