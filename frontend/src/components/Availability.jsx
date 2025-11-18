@@ -352,14 +352,21 @@ function Availability({ userData }) {
         <div className="grid grid-cols-7 gap-2">
           {monthDays.map((day, index) => {
             const timeSlots = day ? getTimeSlotsForDay(day) : []
+            const now = new Date()
             const isToday = day && formatDateKey(day) === formatDateKey(new Date())
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            const dayDate = day ? new Date(day) : null
+            if (dayDate) dayDate.setHours(0, 0, 0, 0)
+            const isPastDate = dayDate && dayDate < today
+            const isTodayDate = dayDate && dayDate.getTime() === today.getTime()
             
             return (
               <div
                 key={index}
                 className={cn(
                   "min-h-[120px] p-2 border rounded-lg",
-                  day ? "bg-card" : "bg-muted/30",
+                  !day ? "bg-muted/30" : isPastDate ? "bg-muted/50" : "bg-card",
                   isToday && "border-primary"
                 )}
               >
@@ -367,33 +374,49 @@ function Availability({ userData }) {
                   <>
                     <div className={cn(
                       "text-sm font-medium mb-2 text-center",
-                      isToday ? "text-primary" : "text-foreground"
+                      isToday ? "text-primary" : isPastDate ? "text-foreground/30" : "text-foreground"
                     )}>
                       {day.getDate()}
                     </div>
                     <div className="space-y-1">
                       {timeSlots.length > 0 ? (
-                        timeSlots.slice(0, 3).map((slot) => (
-                          <div
-                            key={slot.id}
-                            onClick={() => handleSlotClick(slot, day)}
-                            className={cn(
-                              "p-1 rounded text-[9px] flex items-center gap-1",
-                              slot.isBooked
-                                ? "bg-green-100 text-green-800 border border-green-200 cursor-not-allowed"
-                                : slot.isAvailable
-                                ? "bg-blue-100 text-blue-800 border border-blue-200 hover:bg-blue-200 cursor-pointer"
-                                : "bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed"
-                            )}
-                          >
-                            {slot.type === 'online' ? (
-                              <Monitor className="w-2 h-2 flex-shrink-0" />
-                            ) : (
-                              <MapPin className="w-2 h-2 flex-shrink-0" />
-                            )}
-                            <span className="truncate">{slot.time}</span>
-                          </div>
-                        ))
+                        timeSlots.slice(0, 3).map((slot) => {
+                          const slotDateTime = new Date(day)
+                          const timeMatch = slot.time.match(/(\d+):(\d+)\s*(AM|PM)/)
+                          if (timeMatch) {
+                            let hours = parseInt(timeMatch[1])
+                            const minutes = parseInt(timeMatch[2])
+                            const period = timeMatch[3]
+                            if (period === 'PM' && hours !== 12) hours += 12
+                            if (period === 'AM' && hours === 12) hours = 0
+                            slotDateTime.setHours(hours, minutes, 0, 0)
+                          }
+                          const isPastSlot = isPastDate || (isTodayDate && slotDateTime < now)
+                          
+                          return (
+                            <div
+                              key={slot.id}
+                              onClick={() => !isPastSlot && handleSlotClick(slot, day)}
+                              className={cn(
+                                "p-1 rounded text-[9px] flex items-center gap-1",
+                                isPastSlot
+                                  ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-50"
+                                  : slot.isBooked
+                                  ? "bg-green-100 text-green-800 border border-green-200 cursor-not-allowed"
+                                  : slot.isAvailable
+                                  ? "bg-blue-100 text-blue-800 border border-blue-200 hover:bg-blue-200 cursor-pointer"
+                                  : "bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed"
+                              )}
+                            >
+                              {slot.type === 'online' ? (
+                                <Monitor className="w-2 h-2 flex-shrink-0" />
+                              ) : (
+                                <MapPin className="w-2 h-2 flex-shrink-0" />
+                              )}
+                              <span className="truncate">{slot.time}</span>
+                            </div>
+                          )
+                        })
                       ) : (
                         <div className="text-[9px] text-muted-foreground text-center py-2">
                           No slots
