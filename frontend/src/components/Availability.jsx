@@ -402,7 +402,7 @@ function Availability({ userData }) {
                                 isPastSlot
                                   ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-50"
                                   : slot.isBooked
-                                  ? "bg-green-100 text-green-800 border border-green-200 cursor-not-allowed"
+                                  ? "bg-gray-100 text-gray-800 border border-gray-200 cursor-not-allowed"
                                   : slot.isAvailable
                                   ? "bg-blue-100 text-blue-800 border border-blue-200 hover:bg-blue-200 cursor-pointer"
                                   : "bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed"
@@ -449,7 +449,7 @@ function Availability({ userData }) {
             <span className="text-sm text-muted-foreground">Available</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-green-100 border border-green-200 rounded"></div>
+            <div className="w-4 h-4 bg-gray-100 border border-gray-200 rounded"></div>
             <span className="text-sm text-muted-foreground">Booked</span>
           </div>
         </div>

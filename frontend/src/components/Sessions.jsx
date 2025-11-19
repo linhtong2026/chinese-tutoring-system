@@ -41,6 +41,8 @@ function Sessions({ userData }) {
   const [viewMode, setViewMode] = useState('month')
   const [selectedSession, setSelectedSession] = useState(null)
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false)
+  const [isDaySlotsModalOpen, setIsDaySlotsModalOpen] = useState(false)
+  const [daySlotsModalData, setDaySlotsModalData] = useState({ date: null, slots: [] })
 
   const getWeekStart = (date) => {
     const d = new Date(date)
@@ -105,9 +107,20 @@ function Sessions({ userData }) {
           
           if (tutorsResponse.ok) {
             const tutorsData = await tutorsResponse.json()
-            setTutors(tutorsData.tutors || [])
-            if (tutorsData.tutors && tutorsData.tutors.length > 0) {
-              setSelectedTutor(tutorsData.tutors[0])
+            const fetchedTutors = tutorsData.tutors || []
+            setTutors(fetchedTutors)
+            if (fetchedTutors.length > 0) {
+              setSelectedTutor((prevSelected) => {
+                if (prevSelected) {
+                  const stillExists = fetchedTutors.find((tutor) => tutor.id === prevSelected.id)
+                  if (stillExists) {
+                    return stillExists
+                  }
+                }
+                return fetchedTutors[0]
+              })
+            } else {
+              setSelectedTutor(null)
             }
           }
           
@@ -175,6 +188,14 @@ function Sessions({ userData }) {
   }, [selectedTutor?.id, selectedTutor?.user_id, userData?.role, getToken])
 
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const daySlotsModalDateLabel = daySlotsModalData.date
+    ? daySlotsModalData.date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+      })
+    : ''
 
   const monthlyAvailability = useMemo(() => {
     const year = currentDate.getFullYear()
@@ -427,7 +448,8 @@ function Sessions({ userData }) {
             session: sessionInSlot ? {
               id: sessionInSlot.id,
               status: sessionInSlot.status === 'booked' ? 'booked' : 'available',
-              type: sessionInSlot.session_type
+              type: sessionInSlot.session_type,
+              student_id: sessionInSlot.student_id
             } : null
           })
         })
@@ -468,7 +490,8 @@ function Sessions({ userData }) {
           session: {
             id: session.id,
             status: session.status,
-            type: session.session_type
+            type: session.session_type,
+            student_id: session.student_id
           }
         })
       }
@@ -641,6 +664,15 @@ function Sessions({ userData }) {
     
     setSelectedSlot({ ...slot, date })
     setIsBookingModalOpen(true)
+  }
+  
+  const handleViewAllSlots = (date, slots) => {
+    if (!date || !Array.isArray(slots)) return
+    setDaySlotsModalData({
+      date: new Date(date),
+      slots
+    })
+    setIsDaySlotsModalOpen(true)
   }
   
   const confirmBooking = async (course) => {
@@ -918,7 +950,13 @@ function Sessions({ userData }) {
             <h2 className="text-lg font-semibold text-foreground mb-4">Select Tutor</h2>
             <p className="text-sm text-muted-foreground mb-4">Choose a tutor to view their availability</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {tutors.map((tutor) => (
+              {tutors.map((tutor) => {
+                const tutorName = tutor.user?.name?.trim();
+                const tutorEmail = tutor.user?.email;
+                const displayName = (tutorName && tutorName.length > 0) ? tutorName : (tutorEmail || 'Tutor');
+                const displayInitial = (displayName[0] || 'T').toUpperCase();
+                
+                return (
                 <div
                   key={tutor.id}
                   onClick={() => setSelectedTutor(tutor)}
@@ -931,10 +969,10 @@ function Sessions({ userData }) {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                      <span className="text-lg font-semibold">{tutor.user?.name?.[0] || 'T'}</span>
+                      <span className="text-lg font-semibold">{displayInitial}</span>
                     </div>
                     <div className="flex-1">
-                      <div className="font-medium text-foreground">{tutor.user?.name || 'Tutor'}</div>
+                      <div className="font-medium text-foreground">{displayName}</div>
                       <div className="text-sm text-muted-foreground">{tutor.user?.class_name || 'CN126, CN127'}</div>
                       <div className="flex items-center gap-2 mt-1">
                         {tutor.session_type === 'online' ? (
@@ -953,7 +991,8 @@ function Sessions({ userData }) {
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
         )}
@@ -1037,6 +1076,9 @@ function Sessions({ userData }) {
                                     }
                                     const isPastSlot = isPastDate || (isTodayDate && slotDateTime < now)
                                     
+                                    const isBookedByMe = slot.session && slot.session.status === 'booked' && slot.session.student_id === userData?.id
+                                    const isBookedByOthers = slot.session && slot.session.status === 'booked' && slot.session.student_id !== userData?.id
+                                    
                                     return (
                                       <div
                                         key={slot.id}
@@ -1045,10 +1087,12 @@ function Sessions({ userData }) {
                                           "p-1 rounded text-[9px] flex items-center gap-1",
                                           isPastSlot
                                             ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-50"
-                                            : slot.session && slot.session.status === 'booked'
-                                            ? "bg-red-100 text-red-800 border border-red-200 cursor-not-allowed"
+                                            : isBookedByMe
+                                            ? "bg-green-100 text-green-800 border border-green-300 cursor-not-allowed"
+                                            : isBookedByOthers
+                                            ? "bg-gray-200 text-gray-800 border border-gray-300 cursor-not-allowed"
                                             : slot.isAvailable
-                                            ? "bg-green-100 text-green-800 border border-green-200 hover:bg-green-200 cursor-pointer"
+                                            ? "bg-blue-100 text-blue-800 border border-blue-200 hover:bg-blue-200 cursor-pointer"
                                             : "bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed"
                                         )}
                                       >
@@ -1067,9 +1111,13 @@ function Sessions({ userData }) {
                                   </div>
                                 )}
                                 {timeSlots.length > 3 && (
-                                  <div className="text-[8px] text-muted-foreground text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewAllSlots(day, timeSlots)}
+                                    className="text-[8px] text-primary hover:underline text-center w-full mt-1"
+                                  >
                                     +{timeSlots.length - 3} more
-                                  </div>
+                                  </button>
                                 )}
                               </div>
                             </>
@@ -1126,6 +1174,9 @@ function Sessions({ userData }) {
                               }
                               const isPastSlot = isPastDate || (isToday && slotDateTime < now)
                               
+                              const isBookedByMe = slot.session && slot.session.status === 'booked' && slot.session.student_id === userData?.id
+                              const isBookedByOthers = slot.session && slot.session.status === 'booked' && slot.session.student_id !== userData?.id
+                              
                               return (
                                 <div
                                   key={slot.id}
@@ -1134,10 +1185,12 @@ function Sessions({ userData }) {
                                     "p-1.5 rounded text-[10px] flex items-center gap-1.5",
                                     isPastSlot
                                       ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-50"
-                                      : slot.session && slot.session.status === 'booked'
-                                      ? "bg-red-100 text-red-800 border border-red-200 cursor-not-allowed"
+                                      : isBookedByMe
+                                      ? "bg-green-100 text-green-800 border border-green-300 cursor-not-allowed"
+                                      : isBookedByOthers
+                                      ? "bg-gray-200 text-gray-800 border border-gray-300 cursor-not-allowed"
                                       : slot.isAvailable
-                                      ? "bg-green-100 text-green-800 border border-green-200 cursor-pointer hover:bg-green-200"
+                                      ? "bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer hover:bg-blue-200"
                                       : "bg-gray-100 text-gray-600 border border-gray-200 cursor-not-allowed"
                                   )}
                                 >
@@ -1149,7 +1202,7 @@ function Sessions({ userData }) {
                                   <div className="flex-1 min-w-0">
                                     <div className="font-medium truncate text-[10px]">{slot.time}</div>
                                     <div className="text-[9px] opacity-75">
-                                      {slot.session && slot.session.status === 'booked' ? 'Booked' : 'Available'}
+                                      {isBookedByMe ? 'Booked by you' : slot.session && slot.session.status === 'booked' ? 'Booked' : 'Available'}
                                     </div>
                                   </div>
                                 </div>
@@ -1177,17 +1230,106 @@ function Sessions({ userData }) {
                   <span className="text-sm text-muted-foreground">In-Person</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-green-100 border border-green-200 rounded"></div>
+                  <div className="w-4 h-4 bg-blue-100 border border-blue-200 rounded"></div>
                   <span className="text-sm text-muted-foreground">Available</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-red-100 border border-red-200 rounded"></div>
+                  <div className="w-4 h-4 bg-green-100 border border-green-300 rounded"></div>
+                  <span className="text-sm text-muted-foreground">Booked by you</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gray-200 border border-gray-300 rounded"></div>
                   <span className="text-sm text-muted-foreground">Booked</span>
                 </div>
               </div>
             </Card>
           </>
         )}
+
+        <Dialog open={isDaySlotsModalOpen} onOpenChange={setIsDaySlotsModalOpen}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>All availability for {selectedTutor?.user?.name}</DialogTitle>
+              <DialogDescription>
+                {daySlotsModalDateLabel || 'Select a date to view all slots'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 max-h-[360px] overflow-y-auto">
+              {daySlotsModalData.slots.length > 0 ? (
+                daySlotsModalData.slots.map((slot, index) => {
+                  const now = new Date()
+                  const baseDate = daySlotsModalData.date ? new Date(daySlotsModalData.date) : null
+                  const baseDay = baseDate
+                    ? new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate())
+                    : null
+                  const today = new Date()
+                  today.setHours(0, 0, 0, 0)
+                  const isPastDate = baseDay ? baseDay < today : false
+                  
+                  let isPastSlot = false
+                  if (baseDate) {
+                    const slotDateTime = new Date(baseDate)
+                    const timeMatch = slot.time.match(/(\d+):(\d+)\s*(AM|PM)/)
+                    if (timeMatch) {
+                      let hours = parseInt(timeMatch[1])
+                      const minutes = parseInt(timeMatch[2])
+                      const period = timeMatch[3]
+                      if (period === 'PM' && hours !== 12) hours += 12
+                      if (period === 'AM' && hours === 12) hours = 0
+                      slotDateTime.setHours(hours, minutes, 0, 0)
+                    }
+                    isPastSlot =
+                      isPastDate ||
+                      (baseDay && baseDay.getTime() === today.getTime() && slotDateTime < now)
+                  }
+                  
+                  const isBookedByMe = slot.session && slot.session.status === 'booked' && slot.session.student_id === userData?.id
+                  const isBookedByOthers = slot.session && slot.session.status === 'booked' && slot.session.student_id !== userData?.id
+                  
+                  return (
+                    <div
+                      key={`${slot.id}-${index}`}
+                      onClick={() => !isPastSlot && slot.isAvailable && !slot.session && handleBookSession(slot, daySlotsModalData.date)}
+                      className={cn(
+                        "p-2 rounded text-sm flex items-center gap-2 border",
+                        isPastSlot
+                          ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-50"
+                          : isBookedByMe
+                          ? "bg-green-100 text-green-800 border-green-300 cursor-not-allowed"
+                          : isBookedByOthers
+                          ? "bg-gray-200 text-gray-800 border-gray-300 cursor-not-allowed"
+                          : slot.isAvailable
+                          ? "bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200 cursor-pointer"
+                          : "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed"
+                      )}
+                    >
+                      {slot.type === 'online' ? (
+                        <Monitor className="w-3.5 h-3.5 flex-shrink-0" />
+                      ) : (
+                        <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate text-sm">{slot.time}</div>
+                        <div className="text-xs opacity-75">
+                          {isBookedByMe ? 'Booked by you' : slot.session && slot.session.status === 'booked' ? 'Booked' : slot.isAvailable ? 'Available' : 'Unavailable'}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  No availability for this day.
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDaySlotsModalOpen(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={isBookingModalOpen} onOpenChange={setIsBookingModalOpen}>
           <DialogContent className="sm:max-w-[425px]">
@@ -1211,11 +1353,40 @@ function Sessions({ userData }) {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="course">Course (Optional)</Label>
-                  <Input
-                    id="course"
-                    name="course"
-                    placeholder="e.g., CN126"
-                  />
+                  <Select
+                    onValueChange={(value) => {
+                      const form = document.querySelector('form')
+                      if (form) {
+                        let hiddenInput = form.querySelector('input[name="course"]')
+                        if (!hiddenInput) {
+                          hiddenInput = document.createElement('input')
+                          hiddenInput.type = 'hidden'
+                          hiddenInput.name = 'course'
+                          form.appendChild(hiddenInput)
+                        }
+                        hiddenInput.value = value
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="course">
+                      <SelectValue placeholder="Select a course (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CN115">CN115</SelectItem>
+                      <SelectItem value="CN125">CN125</SelectItem>
+                      <SelectItem value="CN126">CN126</SelectItem>
+                      <SelectItem value="CN127">CN127</SelectItem>
+                      <SelectItem value="CN128">CN128</SelectItem>
+                      <SelectItem value="CN135">CN135</SelectItem>
+                      <SelectItem value="CN235">CN235</SelectItem>
+                      <SelectItem value="CN321">CN321</SelectItem>
+                      <SelectItem value="CN322">CN322</SelectItem>
+                      <SelectItem value="CN335">CN335</SelectItem>
+                      <SelectItem value="CN434">CN434</SelectItem>
+                      <SelectItem value="CN455">CN455</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <input type="hidden" name="course" value="" />
                 </div>
               </div>
               <DialogFooter>
@@ -1356,7 +1527,7 @@ function Sessions({ userData }) {
                                     isPastSlot
                                       ? "bg-gray-100 text-gray-400 border border-gray-200 opacity-50"
                                       : slot.session && slot.session.status === 'booked'
-                                      ? "bg-green-100 text-green-800 border border-green-200"
+                                      ? "bg-gray-100 text-gray-800 border border-gray-200"
                                       : slot.session
                                       ? "bg-blue-100 text-blue-800 border border-blue-200"
                                       : "bg-blue-100 text-blue-800 border border-blue-200"
@@ -1444,7 +1615,7 @@ function Sessions({ userData }) {
                               isPastSlot
                                 ? "bg-gray-100 text-gray-400 border border-gray-200 opacity-50"
                                 : slot.session && slot.session.status === 'booked'
-                                ? "bg-green-100 text-green-800 border border-green-200"
+                                ? "bg-gray-200 text-gray-800 border border-gray-300"
                                 : slot.session
                                 ? "bg-blue-100 text-blue-800 border border-blue-200"
                                 : "bg-blue-100 text-blue-800 border border-blue-200"
@@ -1490,7 +1661,7 @@ function Sessions({ userData }) {
             <span className="text-sm text-muted-foreground">Available</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-green-100 border border-green-200 rounded"></div>
+            <div className="w-4 h-4 bg-gray-200 border border-gray-300 rounded"></div>
             <span className="text-sm text-muted-foreground">Booked</span>
           </div>
         </div>
