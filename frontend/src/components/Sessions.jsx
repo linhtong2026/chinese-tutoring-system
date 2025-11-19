@@ -769,10 +769,6 @@ function Sessions({ userData }) {
               {tutors.map((tutor) => {
                 const tutorName = tutor.user?.name?.trim();
                 const tutorEmail = tutor.user?.email;
-                // // Debug: log tutor data to see what's actually being returned
-                // if (tutor.user && !tutorName) {
-                //   console.log('Tutor data:', { tutor, user: tutor.user, name: tutor.user.name, email: tutor.user.email });
-                // }
                 const displayName = (tutorName && tutorName.length > 0) ? tutorName : (tutorEmail || 'Tutor');
                 const displayInitial = (displayName[0] || 'T').toUpperCase();
                 
