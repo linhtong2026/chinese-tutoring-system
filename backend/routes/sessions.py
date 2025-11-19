@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from models import db, Session, User, Availability, Tutor, SessionNote
+from models import db, Session, User, Availability, Tutor, SessionNote, Feedback
 from auth import require_auth
 from datetime import datetime
 
@@ -353,4 +353,174 @@ def get_session_note(session_id):
         return jsonify({"success": True, "note": None})
     
     return jsonify({"success": True, "note": note.to_dict()})
+
+
+@session_bp.route("/api/professor/sessions", methods=["GET"])
+@require_auth
+def professor_get_all_sessions():
+    current_user: User = getattr(request, 'db_user', None)
+    if not current_user or current_user.role != 'professor':
+        return jsonify({"error": "Forbidden"}), 403
+
+    sessions = Session.query.order_by(Session.start_time.desc()).all()
+    
+    sessions_data = []
+    for session in sessions:
+        session_dict = session.to_dict()
+        
+        if session.tutor_user:
+            session_dict['tutor_name'] = session.tutor_user.name
+        
+        if session.student_user:
+            session_dict['student_name'] = session.student_user.name
+        
+        note = SessionNote.query.filter_by(session_id=session.id).first()
+        if note:
+            session_dict['note'] = note.to_dict()
+        else:
+            session_dict['note'] = None
+        
+        feedback = Feedback.query.filter_by(session_id=session.id).first()
+        if feedback:
+            session_dict['feedback'] = feedback.to_dict()
+        else:
+            session_dict['feedback'] = None
+        
+        sessions_data.append(session_dict)
+    
+    return jsonify({"success": True, "sessions": sessions_data})
+
+
+@session_bp.route("/api/professor/dashboard", methods=["GET"])
+@require_auth
+def professor_get_dashboard():
+    current_user: User = getattr(request, 'db_user', None)
+    if not current_user or current_user.role != 'professor':
+        return jsonify({"error": "Forbidden"}), 403
+
+    class_filter = request.args.get('class')
+    tutor_filter = request.args.get('tutor')
+
+    query = Session.query.filter(Session.status == 'booked')
+    
+    if class_filter:
+        query = query.filter(Session.course == class_filter)
+    if tutor_filter:
+        query = query.filter(Session.tutor_id == int(tutor_filter))
+    
+    sessions = query.all()
+
+    total_sessions = len(sessions)
+    
+    total_hours = 0
+    for session in sessions:
+        if session.start_time and session.end_time:
+            duration = (session.end_time - session.start_time).total_seconds() / 3600
+            total_hours += duration
+    
+    unique_students = set()
+    for session in sessions:
+        if session.student_id:
+            unique_students.add(session.student_id)
+    active_students = len(unique_students)
+    
+    ratings = []
+    for session in sessions:
+        feedback = Feedback.query.filter_by(session_id=session.id).first()
+        if feedback and feedback.rating:
+            ratings.append(feedback.rating)
+    
+    avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else None
+    
+    def get_week_number(date):
+        import calendar
+        return date.isocalendar()[1]
+    
+    from datetime import datetime as dt, timedelta
+    now = dt.utcnow()
+    
+    weekly_data = []
+    for i in range(5, -1, -1):
+        week_date = now - timedelta(days=i * 7)
+        week_num = get_week_number(week_date)
+        
+        week_sessions = [s for s in sessions if s.start_time and get_week_number(s.start_time) == week_num]
+        week_hours = sum([(s.end_time - s.start_time).total_seconds() / 3600 
+                         for s in week_sessions if s.start_time and s.end_time])
+        
+        weekly_data.append({
+            'week': f'Week {week_num}',
+            'sessions': len(week_sessions),
+            'hours': round(week_hours, 1)
+        })
+    
+    monthly_attendance = []
+    for i in range(5, -1, -1):
+        month_date = dt(now.year, now.month, 1) - timedelta(days=i * 30)
+        month = month_date.month
+        year = month_date.year
+        month_label = month_date.strftime('%b')
+        
+        month_sessions = [s for s in sessions if s.start_time and 
+                         s.start_time.month == month and s.start_time.year == year]
+        
+        if len(month_sessions) == 0:
+            attendance_rate = 0
+        else:
+            attended = 0
+            for s in month_sessions:
+                note = SessionNote.query.filter_by(session_id=s.id).first()
+                if note and note.attendance_status in ['present', 'attended']:
+                    attended += 1
+            attendance_rate = round((attended / len(month_sessions)) * 100)
+        
+        monthly_attendance.append({
+            'month': month_label,
+            'rate': attendance_rate
+        })
+    
+    course_distribution = {}
+    for session in sessions:
+        if session.course:
+            course_distribution[session.course] = course_distribution.get(session.course, 0) + 1
+    
+    student_counts = {}
+    for session in sessions:
+        if session.student_user and session.student_user.name:
+            name = session.student_user.name
+            student_counts[name] = student_counts.get(name, 0) + 1
+    
+    top_students = [{'name': name, 'count': count} 
+                   for name, count in sorted(student_counts.items(), key=lambda x: x[1], reverse=True)[:5]]
+    
+    all_sessions_query = Session.query.filter(Session.status == 'booked')
+    all_sessions = all_sessions_query.all()
+    
+    unique_classes = set()
+    for s in all_sessions:
+        if s.course:
+            unique_classes.add(s.course)
+    
+    unique_tutors = {}
+    for s in all_sessions:
+        if s.tutor_id and s.tutor_user:
+            unique_tutors[s.tutor_id] = s.tutor_user.name
+    
+    return jsonify({
+        "success": True,
+        "stats": {
+            "total_sessions": total_sessions,
+            "total_hours": round(total_hours, 1),
+            "active_students": active_students,
+            "avg_rating": avg_rating
+        },
+        "weekly_data": weekly_data,
+        "monthly_attendance": monthly_attendance,
+        "course_distribution": course_distribution,
+        "top_students": top_students,
+        "filters": {
+            "classes": sorted(list(unique_classes)),
+            "tutors": [{"id": tid, "name": name} for tid, name in sorted(unique_tutors.items(), key=lambda x: x[1])]
+        }
+    })
 

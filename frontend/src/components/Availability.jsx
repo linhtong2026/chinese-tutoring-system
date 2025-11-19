@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import { Calendar, ChevronLeft, ChevronRight, Monitor, MapPin, User, Clock, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'

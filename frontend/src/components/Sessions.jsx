@@ -39,6 +39,8 @@ function Sessions({ userData }) {
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [viewMode, setViewMode] = useState('month')
+  const [selectedSession, setSelectedSession] = useState(null)
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false)
 
   const getWeekStart = (date) => {
     const d = new Date(date)
@@ -64,7 +66,13 @@ function Sessions({ userData }) {
       if (!userData?.id) return
       
       try {
-        if (userData.role === 'tutor') {
+        if (userData.role === 'professor') {
+          const response = await api.getProfessorSessions(getToken)
+          if (response.ok) {
+            const data = await response.json()
+            setSessions(data.sessions || [])
+          }
+        } else if (userData.role === 'tutor') {
           const tutorResponse = await api.getTutorByUser(getToken, userData.id)
           if (tutorResponse.ok) {
             const tutorData = await tutorResponse.json()
@@ -699,6 +707,182 @@ function Sessions({ userData }) {
       console.error('Error booking session:', error)
       alert(`Error: ${error.message}`)
     }
+  }
+
+  const handleViewNote = (session) => {
+    setSelectedSession(session)
+    setIsNoteModalOpen(true)
+  }
+
+  if (userData?.role === 'professor') {
+    return (
+      <div className="p-8">
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-foreground mb-2">
+            All Sessions
+          </h1>
+          <p className="text-muted-foreground">
+            View all tutoring sessions and notes
+          </p>
+        </div>
+
+        <Card className="p-6">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Date</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Time</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Tutor</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Student</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Course</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Type</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Status</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.length > 0 ? (
+                  sessions.map((session) => {
+                    const startDate = session.start_time ? new Date(session.start_time) : null
+                    const endDate = session.end_time ? new Date(session.end_time) : null
+                    
+                    return (
+                      <tr key={session.id} className="border-b border-border hover:bg-muted/50">
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {startDate ? startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {startDate && endDate 
+                            ? `${startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - ${endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                            : '-'
+                          }
+                        </td>
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {session.tutor_name || '-'}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {session.student_name || '-'}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {session.course || '-'}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            {session.session_type === 'online' ? (
+                              <Monitor className="w-4 h-4 text-muted-foreground" />
+                            ) : (
+                              <MapPin className="w-4 h-4 text-muted-foreground" />
+                            )}
+                            <span className="text-sm text-foreground capitalize">{session.session_type}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={cn(
+                            "text-xs px-2 py-1 rounded",
+                            session.status === 'booked' 
+                              ? "bg-green-100 text-green-800" 
+                              : "bg-blue-100 text-blue-800"
+                          )}>
+                            {session.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          {session.note ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleViewNote(session)}
+                            >
+                              View
+                            </Button>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">No notes</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                      No sessions found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <Dialog open={isNoteModalOpen} onOpenChange={setIsNoteModalOpen}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>Session Notes</DialogTitle>
+              <DialogDescription>
+                View session details and notes
+              </DialogDescription>
+            </DialogHeader>
+            {selectedSession && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Tutor</Label>
+                    <p className="text-sm text-foreground mt-1">{selectedSession.tutor_name || '-'}</p>
+                  </div>
+                  <div>
+                    <Label>Student</Label>
+                    <p className="text-sm text-foreground mt-1">{selectedSession.student_name || '-'}</p>
+                  </div>
+                  <div>
+                    <Label>Date</Label>
+                    <p className="text-sm text-foreground mt-1">
+                      {selectedSession.start_time 
+                        ? new Date(selectedSession.start_time).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                        : '-'
+                      }
+                    </p>
+                  </div>
+                  <div>
+                    <Label>Course</Label>
+                    <p className="text-sm text-foreground mt-1">{selectedSession.course || '-'}</p>
+                  </div>
+                </div>
+                
+                {selectedSession.note && (
+                  <>
+                    <div>
+                      <Label>Attendance Status</Label>
+                      <p className="text-sm text-foreground mt-1">{selectedSession.note.attendance_status || '-'}</p>
+                    </div>
+                    <div>
+                      <Label>Session Notes</Label>
+                      <p className="text-sm text-foreground mt-1 whitespace-pre-wrap">
+                        {selectedSession.note.notes || '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <Label>Student Feedback</Label>
+                      <p className="text-sm text-foreground mt-1 whitespace-pre-wrap">
+                        {selectedSession.note.student_feedback || '-'}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsNoteModalOpen(false)}
+              >
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    )
   }
 
   if (userData?.role === 'student') {

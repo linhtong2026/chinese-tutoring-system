@@ -134,6 +134,29 @@ class ApiService {
     })
     return response
   }
+
+  async getProfessorSessions(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/professor/sessions`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async getProfessorDashboard(getToken, classFilter = null, tutorFilter = null) {
+    const headers = await this.getAuthHeaders(getToken)
+    const params = new URLSearchParams()
+    if (classFilter) params.append('class', classFilter)
+    if (tutorFilter) params.append('tutor', tutorFilter)
+    const queryString = params.toString()
+    const url = `${API_URL}/api/professor/dashboard${queryString ? `?${queryString}` : ''}`
+    const response = await fetch(url, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
 }
 
 export default new ApiService()

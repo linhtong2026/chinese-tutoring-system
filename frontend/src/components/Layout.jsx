@@ -22,6 +22,11 @@ function Layout({ children, currentPage, onPageChange, userData }) {
         { id: 'sessions', label: 'Availability', icon: Calendar },
         { id: 'history', label: 'My Sessions', icon: History },
       ]
+    : userData?.role === 'professor'
+    ? [
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'sessions', label: 'Sessions', icon: FileText },
+      ]
     : [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'sessions', label: 'Sessions', icon: Calendar },
