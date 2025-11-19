@@ -21,13 +21,12 @@ def require_auth(f):
                 request_state = sdk.authenticate_request(request)
             except Exception:
                 # If that fails, try with authorized_parties
+                authorized_party = os.environ.get("AUTHORIZED_PARTY")
+                print(f"Authorized party: {authorized_party}")
                 options = AuthenticateRequestOptions(
-                    authorized_parties=[
-                        "http://localhost:5173",
-                        "https://chinese-tutoring-system-fe-b28d59bea6ca.herokuapp.com",
-                        "https://chinese-tutoring-system-fe-b28d59bea6ca.herokuapp.com/",
-                    ]
+                    authorized_parties=[authorized_party]
                 )
+                print(f"Options: {options}")
                 request_state = sdk.authenticate_request(request, options)
 
             if not request_state.is_signed_in:
