@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "start": "node server.js",
+    "heroku-postbuild": "npm install && npm run build"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.53.7",
@@ -21,6 +21,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "express": "^5.1.0",
     "lucide-react": "^0.552.0",
     "react": "^19.1.1",
     "react-day-picker": "^9.11.1",
