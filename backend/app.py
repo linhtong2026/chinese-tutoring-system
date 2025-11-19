@@ -1,7 +1,15 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from config import Config
-from models import db, Tutor
+from models import (
+    db,
+    User,
+    Tutor,
+    Session,
+    Feedback,
+    Availability,
+    SessionNote,
+)
 from auth import require_auth
 from routes.availability import availability_bp
 from routes.sessions import session_bp
@@ -10,13 +18,22 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy import and_
-from models import db, User, Session, Feedback
 
 app = Flask(__name__)
 app.config.from_object(Config)
 CORS(app)
 
 db.init_app(app)
+
+
+# Initialize database tables on startup
+def init_db():
+    with app.app_context():
+        db.create_all()
+
+
+# Call init_db when app starts
+init_db()
 
 app.register_blueprint(availability_bp)
 app.register_blueprint(session_bp)
@@ -231,18 +248,18 @@ def get_tutors():
     """Get all tutors with their user information"""
     tutors = Tutor.query.all()
     tutors_data = []
-    
+
     for tutor in tutors:
         tutor_dict = tutor.to_dict()
         if tutor.user:
-            tutor_dict['user'] = {
-                'id': tutor.user.id,
-                'name': tutor.user.name,
-                'email': tutor.user.email,
-                'class_name': tutor.user.class_name
+            tutor_dict["user"] = {
+                "id": tutor.user.id,
+                "name": tutor.user.name,
+                "email": tutor.user.email,
+                "class_name": tutor.user.class_name,
             }
         tutors_data.append(tutor_dict)
-    
+
     return jsonify({"success": True, "tutors": tutors_data})
 
 
