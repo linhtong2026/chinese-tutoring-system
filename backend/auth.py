@@ -83,8 +83,10 @@ def require_auth(f):
                 if resp.status_code == 200:
                     return resp.json()
             except Exception as exc:
-                print(f"Failed to fetch Clerk user {user_id}: {exc}")
-            return None
+                return (
+                    jsonify({"error": f"Failed to fetch Clerk user {user_id}: {exc}"}),
+                    401,
+                )
 
         try:
             # Try without authorized_parties first, fallback to with restriction if needed
@@ -93,11 +95,9 @@ def require_auth(f):
             except Exception:
                 # If that fails, try with authorized_parties
                 authorized_party = os.environ.get("AUTHORIZED_PARTY")
-                print(f"Authorized party: {authorized_party}")
                 options = AuthenticateRequestOptions(
                     authorized_parties=[authorized_party]
                 )
-                print(f"Options: {options}")
                 request_state = sdk.authenticate_request(request, options)
 
             if not request_state.is_signed_in:
@@ -107,7 +107,9 @@ def require_auth(f):
             clerk_user_data = fetch_clerk_user(clerk_user_id)
             merged_payload = dict(request_state.payload)
             if clerk_user_data:
-                merged_payload.setdefault("first_name", clerk_user_data.get("first_name"))
+                merged_payload.setdefault(
+                    "first_name", clerk_user_data.get("first_name")
+                )
                 merged_payload.setdefault("last_name", clerk_user_data.get("last_name"))
                 merged_payload.setdefault("name", clerk_user_data.get("full_name"))
                 merged_payload.setdefault(
