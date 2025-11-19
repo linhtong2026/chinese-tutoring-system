@@ -19,7 +19,7 @@ def require_auth(f):
             options = AuthenticateRequestOptions(
                 authorized_parties=[
                     "http://localhost:5173",
-                    "https://chinese-tutoring-system-fe-b28d59bea6ca.herokuapp.com",
+                    "https://chinese-tutoring-system-fe-b28d59bea6ca.herokuapp.com/",
                 ]
             )
             request_state = sdk.authenticate_request(request, options)
