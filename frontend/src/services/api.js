@@ -105,6 +105,35 @@ class ApiService {
     })
     return response
   }
+
+  async createSessionNote(getToken, data) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/session-notes`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data)
+    })
+    return response
+  }
+
+  async updateSessionNote(getToken, noteId, data) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/session-notes/${noteId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data)
+    })
+    return response
+  }
+
+  async getSessionNote(getToken, sessionId) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/sessions/${sessionId}/note`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
 }
 
 export default new ApiService()

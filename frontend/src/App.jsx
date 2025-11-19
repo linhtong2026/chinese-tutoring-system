@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react'
 import OnboardingForm from './components/OnboardingForm'
 import Layout from './components/Layout'
 import Sessions from './components/Sessions'
+import SessionHistory from './components/SessionHistory'
+import StudentSessionHistory from './components/StudentSessionHistory'
 import api from './services/api'
 
 function App() {
@@ -57,7 +59,9 @@ function App() {
       case 'sessions':
         return <Sessions userData={userData} />
       case 'history':
-        return <div className="p-8">History page coming soon...</div>
+        return userData?.role === 'student' 
+          ? <StudentSessionHistory userData={userData} />
+          : <SessionHistory userData={userData} />
       default:
         return <Sessions userData={userData} />
     }
