@@ -5,6 +5,7 @@ import Layout from './components/Layout'
 import Sessions from './components/Sessions'
 import SessionHistory from './components/SessionHistory'
 import StudentSessionHistory from './components/StudentSessionHistory'
+import Dashboard from './components/Dashboard'
 import api from './services/api'
 
 function App() {
@@ -55,7 +56,7 @@ function App() {
   const renderPageContent = () => {
     switch (currentPage) {
       case 'dashboard':
-        return <div className="p-8">Dashboard page coming soon...</div>
+        return <Dashboard userData={userData} />
       case 'sessions':
         return <Sessions userData={userData} />
       case 'history':
@@ -63,6 +64,9 @@ function App() {
           ? <StudentSessionHistory userData={userData} />
           : <SessionHistory userData={userData} />
       default:
+        if (userData?.role === 'professor') {
+          return <Dashboard userData={userData} />
+        }
         return <Sessions userData={userData} />
     }
   }
@@ -99,6 +103,14 @@ function App() {
             {renderPageContent()}
           </Layout>
         ) : userData?.role === 'student' ? (
+          <Layout 
+            currentPage={currentPage} 
+            onPageChange={setCurrentPage}
+            userData={userData}
+          >
+            {renderPageContent()}
+          </Layout>
+        ) : userData?.role === 'professor' ? (
           <Layout 
             currentPage={currentPage} 
             onPageChange={setCurrentPage}
