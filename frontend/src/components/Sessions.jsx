@@ -862,9 +862,9 @@ function Sessions({ userData }) {
                                           isPastSlot
                                             ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-50"
                                             : slot.session && slot.session.status === 'booked'
-                                            ? "bg-red-100 text-red-800 border border-red-200 cursor-not-allowed"
+                                            ? "bg-gray-200 text-gray-800 border border-gray-300 cursor-not-allowed"
                                             : slot.isAvailable
-                                            ? "bg-green-100 text-green-800 border border-green-200 hover:bg-green-200 cursor-pointer"
+                                            ? "bg-blue-100 text-blue-800 border border-blue-200 hover:bg-blue-200 cursor-pointer"
                                             : "bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed"
                                         )}
                                       >
@@ -951,9 +951,9 @@ function Sessions({ userData }) {
                                     isPastSlot
                                       ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-50"
                                       : slot.session && slot.session.status === 'booked'
-                                      ? "bg-red-100 text-red-800 border border-red-200 cursor-not-allowed"
+                                      ? "bg-gray-200 text-gray-800 border border-gray-300 cursor-not-allowed"
                                       : slot.isAvailable
-                                      ? "bg-green-100 text-green-800 border border-green-200 cursor-pointer hover:bg-green-200"
+                                      ? "bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer hover:bg-blue-200"
                                       : "bg-gray-100 text-gray-600 border border-gray-200 cursor-not-allowed"
                                   )}
                                 >
@@ -993,11 +993,11 @@ function Sessions({ userData }) {
                   <span className="text-sm text-muted-foreground">In-Person</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-green-100 border border-green-200 rounded"></div>
+                  <div className="w-4 h-4 bg-blue-100 border border-blue-200 rounded"></div>
                   <span className="text-sm text-muted-foreground">Available</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-red-100 border border-red-200 rounded"></div>
+                  <div className="w-4 h-4 bg-gray-200 border border-gray-300 rounded"></div>
                   <span className="text-sm text-muted-foreground">Booked</span>
                 </div>
               </div>
@@ -1172,7 +1172,7 @@ function Sessions({ userData }) {
                                     isPastSlot
                                       ? "bg-gray-100 text-gray-400 border border-gray-200 opacity-50"
                                       : slot.session && slot.session.status === 'booked'
-                                      ? "bg-green-100 text-green-800 border border-green-200"
+                                      ? "bg-gray-100 text-gray-800 border border-gray-200"
                                       : slot.session
                                       ? "bg-blue-100 text-blue-800 border border-blue-200"
                                       : "bg-blue-100 text-blue-800 border border-blue-200"
@@ -1260,7 +1260,7 @@ function Sessions({ userData }) {
                               isPastSlot
                                 ? "bg-gray-100 text-gray-400 border border-gray-200 opacity-50"
                                 : slot.session && slot.session.status === 'booked'
-                                ? "bg-green-100 text-green-800 border border-green-200"
+                                ? "bg-gray-200 text-gray-800 border border-gray-300"
                                 : slot.session
                                 ? "bg-blue-100 text-blue-800 border border-blue-200"
                                 : "bg-blue-100 text-blue-800 border border-blue-200"
@@ -1306,7 +1306,7 @@ function Sessions({ userData }) {
             <span className="text-sm text-muted-foreground">Available</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-green-100 border border-green-200 rounded"></div>
+            <div className="w-4 h-4 bg-gray-200 border border-gray-300 rounded"></div>
             <span className="text-sm text-muted-foreground">Booked</span>
           </div>
         </div>
