@@ -29,31 +29,7 @@ db.init_app(app)
 # Initialize database tables on startup
 def init_db():
     with app.app_context():
-        try:
-            print("=" * 50)
-            print("Initializing database...")
-            print(f"Database URI: {app.config['SQLALCHEMY_DATABASE_URI'][:50]}...")
-            print("Creating database tables...")
-
-            # Create all tables
-            db.create_all()
-
-            # Verify tables were created
-            from sqlalchemy import inspect
-
-            inspector = inspect(db.engine)
-            tables = inspector.get_table_names()
-            print(f"Database tables created: {', '.join(tables)}")
-            print("Database tables initialized successfully")
-            print("=" * 50)
-        except Exception as e:
-            print("=" * 50)
-            print(f"ERROR creating database tables: {str(e)}")
-            import traceback
-
-            print(traceback.format_exc())
-            print("=" * 50)
-            raise
+        db.create_all()
 
 
 # Call init_db when app starts
