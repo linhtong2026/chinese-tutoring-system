@@ -350,20 +350,32 @@ function Sessions({ userData }) {
     const dayOfWeek = date.getDay()
     const slots = []
     
+    const sessionMap = new Map()
+    sessions.forEach(session => {
+      if (!session.start_time) return
+      const sessionTimeMatch = session.start_time.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):\d{2}/)
+      if (!sessionTimeMatch) return
+      const [, sYear, sMonth, sDay, sHour, sMin] = sessionTimeMatch.map(Number)
+      const sessionDateKey = `${sYear}-${String(sMonth).padStart(2, '0')}-${String(sDay).padStart(2, '0')}`
+      if (sessionDateKey === dateKey) {
+        const sessionMinutes = sHour * 60 + sMin
+        const sessionKey = `${sessionDateKey}-${sessionMinutes}`
+        if (!sessionMap.has(sessionKey) || session.status === 'booked') {
+          sessionMap.set(sessionKey, session)
+        }
+      }
+    })
+    
     availabilities.forEach(av => {
       if (!av.start_time || !av.end_time) return
       
-      // Parse times - backend sends UTC time (which we treat as NYC time)
       const parseNYCTime = (isoString) => {
-        // Backend sends UTC time like "2024-01-15T20:00:00+00:00" or "2024-01-15T20:00:00Z"
-        // Extract time and date components directly (treating UTC as NYC time)
         const match = isoString.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):\d{2}/)
         if (match) {
           const [, year, month, day, hours, minutes] = match.map(Number)
           const nycDate = new Date(year, month - 1, day, hours, minutes)
           return { hours, minutes, date: nycDate, year, month, day }
         }
-        // Fallback
         const dt = new Date(isoString)
         const year = dt.getUTCFullYear()
         const month = dt.getUTCMonth() + 1
@@ -384,8 +396,6 @@ function Sessions({ userData }) {
           appliesToThisDay = true
         }
       } else {
-        // For non-recurring, compare dates in NYC timezone
-        // Use the date from the parsed NYC time
         const avDateKey = `${startNYC.year}-${String(startNYC.month).padStart(2, '0')}-${String(startNYC.day).padStart(2, '0')}`
         if (avDateKey === dateKey) {
           appliesToThisDay = true
@@ -402,47 +412,35 @@ function Sessions({ userData }) {
         const timeSlots = generateTimeSlots(baseDate, endDate, 20)
         
         timeSlots.forEach((slot, slotIndex) => {
-          // Calculate time directly from NYC start time and slot index to avoid timezone issues
           const slotMinutes = startNYC.hours * 60 + startNYC.minutes + (slotIndex * 20)
           const slotHour24 = Math.floor(slotMinutes / 60) % 24
           const slotMin = slotMinutes % 60
           
-          // Format as 12-hour time with AM/PM
           const slotHour12 = slotHour24 === 0 ? 12 : (slotHour24 > 12 ? slotHour24 - 12 : slotHour24)
           const ampm = slotHour24 >= 12 ? 'PM' : 'AM'
           const slotTime = `${slotHour12}:${String(slotMin).padStart(2, '0')} ${ampm}`
           
-          const sessionInSlot = sessions.find(s => {
-            if (!s.start_time) return false
-            
-            // Parse session time (UTC, treating as NYC)
-            const sessionTimeMatch = s.start_time.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):\d{2}/)
-            if (!sessionTimeMatch) return false
-            
-            const [, sYear, sMonth, sDay, sHour, sMin] = sessionTimeMatch.map(Number)
-            const sessionDateKey = `${sYear}-${String(sMonth).padStart(2, '0')}-${String(sDay).padStart(2, '0')}`
-            
-            // Check if session is on the same date
-            if (sessionDateKey !== dateKey) return false
-            
-            // Check if session time overlaps with slot time
-            // Slot time is calculated from startNYC.hours + slotIndex * 20 minutes
-            const slotStartMinutes = startNYC.hours * 60 + startNYC.minutes + (slotIndex * 20)
-            const slotEndMinutes = slotStartMinutes + 20
-            const sessionStartMinutes = sHour * 60 + sMin
-            
-            // Session overlaps if it starts within the slot
-            return sessionStartMinutes >= slotStartMinutes && sessionStartMinutes < slotEndMinutes
-          })
+          const slotStartMinutes = startNYC.hours * 60 + startNYC.minutes + (slotIndex * 20)
+          const slotEndMinutes = slotStartMinutes + 20
           
-          const hasSession = !!sessionInSlot
+          let sessionInSlot = null
+          for (const session of sessionMap.values()) {
+            const sessionTimeMatch = session.start_time.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):\d{2}/)
+            if (!sessionTimeMatch) continue
+            const [, , , , sHour, sMin] = sessionTimeMatch.map(Number)
+            const sessionStartMinutes = sHour * 60 + sMin
+            if (sessionStartMinutes >= slotStartMinutes && sessionStartMinutes < slotEndMinutes) {
+              sessionInSlot = session
+              break
+            }
+          }
           
           slots.push({
             id: `slot-${av.id}-${slot.start.getTime()}`,
             time: slotTime,
             timeSort: slot.start.getTime(),
             type: av.session_type,
-            isAvailable: !hasSession,
+            isAvailable: !sessionInSlot,
             availability: av,
             slotIndex: slotIndex,
             session: sessionInSlot ? {
@@ -456,15 +454,11 @@ function Sessions({ userData }) {
       }
     })
     
-    sessions.forEach(session => {
-      if (!session.start_time) return
-      
+    sessionMap.forEach(session => {
       const sessionTimeMatch = session.start_time.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):\d{2}/)
       if (!sessionTimeMatch) return
-      
       const [, sYear, sMonth, sDay, sHour, sMin] = sessionTimeMatch.map(Number)
       const sessionDateKey = `${sYear}-${String(sMonth).padStart(2, '0')}-${String(sDay).padStart(2, '0')}`
-      
       if (sessionDateKey !== dateKey) return
       
       const alreadyInSlots = slots.some(slot => 
@@ -500,7 +494,6 @@ function Sessions({ userData }) {
     slots.sort((a, b) => a.timeSort - b.timeSort)
     
     const slotMap = new Map()
-    const usedSessionIds = new Set()
     
     for (const slot of slots) {
       const slotKey = slot.timeSort.toString()
@@ -509,33 +502,17 @@ function Sessions({ userData }) {
         const existingSlot = slotMap.get(slotKey)
         
         if (slot.session && !existingSlot.session) {
-          if (!usedSessionIds.has(slot.session.id)) {
-            existingSlot.session = slot.session
-            existingSlot.isAvailable = false
-            usedSessionIds.add(slot.session.id)
-          }
+          existingSlot.session = slot.session
+          existingSlot.isAvailable = false
         } else if (slot.session && existingSlot.session) {
-          if (slot.session.id === existingSlot.session.id) {
-            continue
-          }
-          if (!usedSessionIds.has(slot.session.id)) {
+          if (slot.session.id !== existingSlot.session.id) {
             if (slot.session.status === 'booked' && existingSlot.session.status !== 'booked') {
-              usedSessionIds.delete(existingSlot.session.id)
               existingSlot.session = slot.session
               existingSlot.isAvailable = false
-              usedSessionIds.add(slot.session.id)
             }
           }
         }
       } else {
-        if (slot.session) {
-          if (usedSessionIds.has(slot.session.id)) {
-            slot.session = null
-            slot.isAvailable = true
-          } else {
-            usedSessionIds.add(slot.session.id)
-          }
-        }
         slotMap.set(slotKey, slot)
       }
     }
