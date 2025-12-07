@@ -26,6 +26,9 @@ function App() {
             const data = await response.json()
             setUserData(data.user)
             setShowOnboarding(!data.onboarding_complete)
+            if (data.user?.role === 'professor' || data.user?.role === 'tutor') {
+              setCurrentPage('dashboard')
+            }
           } else {
             setShowOnboarding(true)
           }
@@ -64,7 +67,7 @@ function App() {
           ? <StudentSessionHistory userData={userData} />
           : <SessionHistory userData={userData} />
       default:
-        if (userData?.role === 'professor') {
+        if (userData?.role === 'professor' || userData?.role === 'tutor') {
           return <Dashboard userData={userData} />
         }
         return <Sessions userData={userData} />
