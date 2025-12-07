@@ -125,22 +125,24 @@ function FeedbackPage() {
     })
   }
 
-  const getStarValue = (e, starIndex) => {
-    if (!e?.currentTarget) return starIndex
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const isHalf = x < rect.width / 2
-    return isHalf ? starIndex - 0.5 : starIndex
-  }
-
   const renderSingleStar = (starIndex, displayRating) => {
     const fillPercentage = Math.min(Math.max(displayRating - (starIndex - 1), 0), 1) * 100
     return (
       <div className="relative w-10 h-10">
-        <Star className="w-10 h-10 text-gray-300" />
+        <Star className="w-10 h-10 text-gray-300 absolute inset-0" />
         <div className="absolute inset-0 overflow-hidden" style={{ width: `${fillPercentage}%` }}>
           <Star className="w-10 h-10 fill-yellow-400 text-yellow-400" />
         </div>
+        <div 
+          className="absolute inset-y-0 left-0 w-1/2 cursor-pointer z-10"
+          onMouseEnter={() => setHoveredRating(starIndex - 0.5)}
+          onClick={() => setRating(starIndex - 0.5)}
+        />
+        <div 
+          className="absolute inset-y-0 right-0 w-1/2 cursor-pointer z-10"
+          onMouseEnter={() => setHoveredRating(starIndex)}
+          onClick={() => setRating(starIndex)}
+        />
       </div>
     )
   }
@@ -216,15 +218,9 @@ function FeedbackPage() {
                   {[1, 2, 3, 4, 5].map((star) => {
                     const displayRating = hoveredRating || rating
                     return (
-                      <button
-                        key={star}
-                        type="button"
-                        onClick={(e) => setRating(getStarValue(e, star))}
-                        onMouseMove={(e) => setHoveredRating(getStarValue(e, star))}
-                        className="p-1 transition-transform hover:scale-110"
-                      >
+                      <div key={star} className="transition-transform hover:scale-110">
                         {renderSingleStar(star, displayRating)}
-                      </button>
+                      </div>
                     )
                   })}
                 </div>

@@ -175,9 +175,24 @@ def student_my_sessions():
         return jsonify({"error": "Forbidden"}), 403
 
     sessions = Session.query.options(
-        joinedload(Session.student_user)
+        joinedload(Session.student_user),
+        joinedload(Session.tutor_user)
     ).filter(Session.student_id == current_user.id).order_by(Session.start_time.asc()).all()
-    return jsonify({"sessions": [s.to_dict() for s in sessions]})
+    
+    session_ids = [s.id for s in sessions]
+    feedbacks = Feedback.query.filter(Feedback.session_id.in_(session_ids)).all() if session_ids else []
+    feedback_map = {f.session_id: f for f in feedbacks}
+    
+    sessions_data = []
+    for session in sessions:
+        session_dict = session.to_dict()
+        if session.tutor_user:
+            session_dict['tutor_name'] = session.tutor_user.name
+        feedback = feedback_map.get(session.id)
+        session_dict['feedback'] = feedback.to_dict() if feedback else None
+        sessions_data.append(session_dict)
+    
+    return jsonify({"sessions": sessions_data})
 
 
 @session_bp.route("/api/sessions", methods=["GET"])

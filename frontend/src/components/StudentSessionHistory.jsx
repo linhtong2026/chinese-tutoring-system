@@ -42,16 +42,8 @@ function StudentSessionHistory({ userData }) {
 
           const feedbacks = {}
           for (const session of pastSessions) {
-            try {
-              const fbResponse = await api.getSessionFeedback(getToken, session.id)
-              if (fbResponse.ok) {
-                const fbData = await fbResponse.json()
-                if (fbData.feedback) {
-                  feedbacks[session.id] = fbData.feedback
-                }
-              }
-            } catch (err) {
-              console.error('Error fetching feedback for session:', session.id, err)
+            if (session.feedback) {
+              feedbacks[session.id] = session.feedback
             }
           }
           setFeedbackMap(feedbacks)
@@ -124,14 +116,6 @@ function StudentSessionHistory({ userData }) {
     setIsFeedbackModalOpen(true)
   }
 
-  const getStarValue = (e, starIndex) => {
-    if (!e?.currentTarget) return starIndex
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const isHalf = x < rect.width / 2
-    return isHalf ? starIndex - 0.5 : starIndex
-  }
-
   const handleStarClick = (session, rating) => {
     setRatingSession(session)
     setPendingRating(rating)
@@ -169,14 +153,46 @@ function StudentSessionHistory({ userData }) {
     setSubmittingRating(false)
   }
 
-  const renderSingleStar = (starIndex, rating, size = 'w-5 h-5') => {
-    const fillPercentage = Math.min(Math.max(rating - (starIndex - 1), 0), 1) * 100
+  const renderTableStar = (starIndex, displayRating, session) => {
+    const fillPercentage = Math.min(Math.max(displayRating - (starIndex - 1), 0), 1) * 100
     return (
-      <div className={`relative ${size}`}>
-        <Star className={`${size} text-gray-300`} />
+      <div className="relative w-5 h-5">
+        <Star className="w-5 h-5 text-gray-300 absolute inset-0" />
         <div className="absolute inset-0 overflow-hidden" style={{ width: `${fillPercentage}%` }}>
-          <Star className={`${size} fill-yellow-400 text-yellow-400`} />
+          <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
         </div>
+        <div 
+          className="absolute inset-y-0 left-0 w-1/2 cursor-pointer z-10"
+          onMouseEnter={() => setHoveredRating(prev => ({ ...prev, [session.id]: starIndex - 0.5 }))}
+          onClick={() => handleStarClick(session, starIndex - 0.5)}
+        />
+        <div 
+          className="absolute inset-y-0 right-0 w-1/2 cursor-pointer z-10"
+          onMouseEnter={() => setHoveredRating(prev => ({ ...prev, [session.id]: starIndex }))}
+          onClick={() => handleStarClick(session, starIndex)}
+        />
+      </div>
+    )
+  }
+
+  const renderModalStar = (starIndex, displayRating) => {
+    const fillPercentage = Math.min(Math.max(displayRating - (starIndex - 1), 0), 1) * 100
+    return (
+      <div className="relative w-10 h-10">
+        <Star className="w-10 h-10 text-gray-300 absolute inset-0" />
+        <div className="absolute inset-0 overflow-hidden" style={{ width: `${fillPercentage}%` }}>
+          <Star className="w-10 h-10 fill-yellow-400 text-yellow-400" />
+        </div>
+        <div 
+          className="absolute inset-y-0 left-0 w-1/2 cursor-pointer z-10"
+          onMouseEnter={() => setModalHoveredRating(starIndex - 0.5)}
+          onClick={() => setPendingRating(starIndex - 0.5)}
+        />
+        <div 
+          className="absolute inset-y-0 right-0 w-1/2 cursor-pointer z-10"
+          onMouseEnter={() => setModalHoveredRating(starIndex)}
+          onClick={() => setPendingRating(starIndex)}
+        />
       </div>
     )
   }
@@ -190,15 +206,9 @@ function StudentSessionHistory({ userData }) {
         onMouseLeave={() => setHoveredRating(prev => ({ ...prev, [session.id]: null }))}
       >
         {[1, 2, 3, 4, 5].map((star) => (
-          <button
-            key={star}
-            type="button"
-            onClick={(e) => handleStarClick(session, getStarValue(e, star))}
-            onMouseMove={(e) => setHoveredRating(prev => ({ ...prev, [session.id]: getStarValue(e, star) }))}
-            className="p-0.5 transition-transform hover:scale-110"
-          >
-            {renderSingleStar(star, displayRating)}
-          </button>
+          <div key={star} className="transition-transform hover:scale-110">
+            {renderTableStar(star, displayRating, session)}
+          </div>
         ))}
       </div>
     )
@@ -423,15 +433,9 @@ function StudentSessionHistory({ userData }) {
               {[1, 2, 3, 4, 5].map((star) => {
                 const displayRating = modalHoveredRating || pendingRating
                 return (
-                  <button
-                    key={star}
-                    type="button"
-                    onClick={(e) => setPendingRating(getStarValue(e, star))}
-                    onMouseMove={(e) => setModalHoveredRating(getStarValue(e, star))}
-                    className="p-1 transition-transform hover:scale-110"
-                  >
-                    {renderSingleStar(star, displayRating, 'w-10 h-10')}
-                  </button>
+                  <div key={star} className="transition-transform hover:scale-110">
+                    {renderModalStar(star, displayRating)}
+                  </div>
                 )
               })}
             </div>
