@@ -5,17 +5,26 @@ from icalendar import Calendar, Event
 from flask import current_app
 import base64
 
+def format_session_type(session_type):
+    if session_type == 'in-person':
+        return 'In-Person'
+    elif session_type == 'online':
+        return 'Online'
+    return session_type.title() if session_type else 'Online'
+
 def generate_ics_event(session_data, tutor_name, student_name):
     cal = Calendar()
     cal.add('prodid', '-//Chinese Tutoring System//EN')
     cal.add('version', '2.0')
     cal.add('method', 'REQUEST')
     
+    session_type_display = format_session_type(session_data.get('session_type', 'online'))
+    
     event = Event()
     event.add('summary', f'Tutoring Session - {session_data.get("course", "Chinese")}')
     event.add('dtstart', datetime.fromisoformat(session_data['start_time'].replace('Z', '+00:00')) if isinstance(session_data['start_time'], str) else session_data['start_time'])
     event.add('dtend', datetime.fromisoformat(session_data['end_time'].replace('Z', '+00:00')) if isinstance(session_data['end_time'], str) else session_data['end_time'])
-    event.add('description', f'Chinese tutoring session with {tutor_name}\nStudent: {student_name}\nType: {session_data.get("session_type", "online")}')
+    event.add('description', f'Chinese tutoring session with {tutor_name}\nStudent: {student_name}\nType: {session_type_display}')
     event.add('uid', f'session-{session_data["id"]}@chinesetutoring.com')
     
     cal.add_component(event)
@@ -37,6 +46,7 @@ def send_booking_confirmation(student_email, student_name, tutor_name, session_d
     
     formatted_date = start_time.strftime('%B %d, %Y')
     formatted_time = start_time.strftime('%I:%M %p')
+    session_type_display = format_session_type(session_data.get('session_type', 'online'))
     
     html_content = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -48,7 +58,7 @@ def send_booking_confirmation(student_email, student_name, tutor_name, session_d
             <p><strong>Tutor:</strong> {tutor_name}</p>
             <p><strong>Date:</strong> {formatted_date}</p>
             <p><strong>Time:</strong> {formatted_time}</p>
-            <p><strong>Type:</strong> {session_data.get('session_type', 'online').title()}</p>
+            <p><strong>Type:</strong> {session_type_display}</p>
         </div>
         <p>A calendar invite is attached to this email. Click to add it to your calendar!</p>
         <p>Best regards,<br>Chinese Tutoring System</p>
@@ -96,6 +106,7 @@ def send_tutor_notification(tutor_email, tutor_name, student_name, session_data)
     
     formatted_date = start_time.strftime('%B %d, %Y')
     formatted_time = start_time.strftime('%I:%M %p')
+    session_type_display = format_session_type(session_data.get('session_type', 'online'))
     
     html_content = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -107,7 +118,7 @@ def send_tutor_notification(tutor_email, tutor_name, student_name, session_data)
             <p><strong>Course:</strong> {session_data.get('course', 'Chinese')}</p>
             <p><strong>Date:</strong> {formatted_date}</p>
             <p><strong>Time:</strong> {formatted_time}</p>
-            <p><strong>Type:</strong> {session_data.get('session_type', 'online').title()}</p>
+            <p><strong>Type:</strong> {session_type_display}</p>
         </div>
         <p>A calendar invite is attached to this email.</p>
         <p>Best regards,<br>Chinese Tutoring System</p>
