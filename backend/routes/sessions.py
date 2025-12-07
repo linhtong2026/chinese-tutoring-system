@@ -3,6 +3,7 @@ from models import db, Session, User, Availability, Tutor, SessionNote, Feedback
 from auth import require_auth
 from datetime import datetime
 from sqlalchemy.orm import joinedload, subqueryload
+from services.email_service import send_booking_confirmation, send_tutor_notification, send_feedback_request
 import time
 
 session_bp = Blueprint("session", __name__)
@@ -88,6 +89,28 @@ def book_session():
     db.session.add(new_session)
 
     db.session.commit()
+
+    tutor_user = User.query.get(tutor_user_id)
+    session_data = new_session.to_dict()
+    
+    try:
+        send_booking_confirmation(
+            student_email=current_user.email,
+            student_name=current_user.name,
+            tutor_name=tutor_user.name if tutor_user else "Tutor",
+            session_data=session_data
+        )
+        
+        if tutor_user:
+            send_tutor_notification(
+                tutor_email=tutor_user.email,
+                tutor_name=tutor_user.name,
+                student_name=current_user.name,
+                session_data=session_data
+            )
+    except Exception as e:
+        print(f"Error sending booking emails: {e}")
+
     return jsonify({"session": new_session.to_dict()}), 201
 
 
@@ -307,6 +330,19 @@ def create_session_note():
     db.session.add(new_note)
     db.session.commit()
 
+    if attendance_status in ['present', 'attended', 'late']:
+        student = User.query.get(session.student_id)
+        if student:
+            try:
+                send_feedback_request(
+                    student_email=student.email,
+                    student_name=student.name,
+                    tutor_name=current_user.name,
+                    session_data=session.to_dict()
+                )
+            except Exception as e:
+                print(f"Error sending feedback request email: {e}")
+
     return jsonify({"success": True, "note": new_note.to_dict()}), 201
 
 
@@ -357,6 +393,69 @@ def get_session_note(session_id):
         return jsonify({"success": True, "note": None})
 
     return jsonify({"success": True, "note": note.to_dict()})
+
+
+@session_bp.route("/api/feedback", methods=["POST"])
+@require_auth
+def submit_feedback():
+    current_user: User = getattr(request, "db_user", None)
+    if not current_user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    session_id = data.get("session_id")
+    rating = data.get("rating")
+    comment = data.get("comment")
+
+    if not session_id or not rating:
+        return jsonify({"error": "session_id and rating are required"}), 400
+
+    session = Session.query.get(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+
+    if session.student_id != current_user.id:
+        return jsonify({"error": "You can only submit feedback for your own sessions"}), 403
+
+    existing_feedback = Feedback.query.filter_by(
+        session_id=session_id, student_id=current_user.id
+    ).first()
+
+    if existing_feedback:
+        existing_feedback.rating = rating
+        existing_feedback.comment = comment
+        db.session.commit()
+        return jsonify({"success": True, "feedback": existing_feedback.to_dict()})
+
+    new_feedback = Feedback(
+        session_id=session_id,
+        student_id=current_user.id,
+        rating=rating,
+        comment=comment
+    )
+    db.session.add(new_feedback)
+    db.session.commit()
+
+    return jsonify({"success": True, "feedback": new_feedback.to_dict()}), 201
+
+
+@session_bp.route("/api/sessions/<int:session_id>/feedback", methods=["GET"])
+@require_auth
+def get_session_feedback(session_id):
+    current_user: User = getattr(request, "db_user", None)
+    if not current_user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    session = Session.query.get(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+
+    feedback = Feedback.query.filter_by(session_id=session_id).first()
+
+    if not feedback:
+        return jsonify({"success": True, "feedback": None})
+
+    return jsonify({"success": True, "feedback": feedback.to_dict()})
 
 
 @session_bp.route("/api/professor/sessions", methods=["GET"])

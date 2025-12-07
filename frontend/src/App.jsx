@@ -1,11 +1,13 @@
 import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useUser, useAuth } from '@clerk/clerk-react'
 import { useState, useEffect } from 'react'
+import { Routes, Route } from 'react-router-dom'
 import OnboardingForm from './components/OnboardingForm'
 import Layout from './components/Layout'
 import Sessions from './components/Sessions'
 import SessionHistory from './components/SessionHistory'
 import StudentSessionHistory from './components/StudentSessionHistory'
 import Dashboard from './components/Dashboard'
+import FeedbackPage from './components/FeedbackPage'
 import api from './services/api'
 
 function App() {
@@ -82,7 +84,7 @@ function App() {
     )
   }
 
-  return (
+  const mainAppContent = (
     <div className="app">
       <SignedOut>
         <div className="auth-container">
@@ -134,6 +136,13 @@ function App() {
         )}
       </SignedIn>
     </div>
+  )
+
+  return (
+    <Routes>
+      <Route path="/feedback/:sessionId" element={<FeedbackPage />} />
+      <Route path="*" element={mainAppContent} />
+    </Routes>
   )
 }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@clerk/clerk-react'
-import { Search, Eye, Clock, Monitor, MapPin, Calendar } from 'lucide-react'
+import { Search, Eye, Clock, Monitor, MapPin, Calendar, Star, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -15,6 +15,14 @@ function StudentSessionHistory({ userData }) {
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false)
   const [selectedSession, setSelectedSession] = useState(null)
   const [sessionNote, setSessionNote] = useState(null)
+  const [feedbackMap, setFeedbackMap] = useState({})
+  const [isRatingModalOpen, setIsRatingModalOpen] = useState(false)
+  const [ratingSession, setRatingSession] = useState(null)
+  const [pendingRating, setPendingRating] = useState(0)
+  const [ratingComment, setRatingComment] = useState('')
+  const [submittingRating, setSubmittingRating] = useState(false)
+  const [hoveredRating, setHoveredRating] = useState({})
+  const [modalHoveredRating, setModalHoveredRating] = useState(0)
 
   useEffect(() => {
     const fetchSessions = async () => {
@@ -31,6 +39,22 @@ function StudentSessionHistory({ userData }) {
           })
           setSessions(pastSessions)
           setFilteredSessions(pastSessions)
+
+          const feedbacks = {}
+          for (const session of pastSessions) {
+            try {
+              const fbResponse = await api.getSessionFeedback(getToken, session.id)
+              if (fbResponse.ok) {
+                const fbData = await fbResponse.json()
+                if (fbData.feedback) {
+                  feedbacks[session.id] = fbData.feedback
+                }
+              }
+            } catch (err) {
+              console.error('Error fetching feedback for session:', session.id, err)
+            }
+          }
+          setFeedbackMap(feedbacks)
         }
       } catch (error) {
         console.error('Error fetching sessions:', error)
@@ -100,6 +124,86 @@ function StudentSessionHistory({ userData }) {
     setIsFeedbackModalOpen(true)
   }
 
+  const getStarValue = (e, starIndex) => {
+    if (!e?.currentTarget) return starIndex
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const isHalf = x < rect.width / 2
+    return isHalf ? starIndex - 0.5 : starIndex
+  }
+
+  const handleStarClick = (session, rating) => {
+    setRatingSession(session)
+    setPendingRating(rating)
+    const existingFeedback = feedbackMap[session.id]
+    setRatingComment(existingFeedback?.comment || '')
+    setIsRatingModalOpen(true)
+  }
+
+  const handleSubmitRating = async () => {
+    if (!ratingSession || pendingRating === 0) return
+
+    setSubmittingRating(true)
+    try {
+      const response = await api.submitFeedback(getToken, {
+        session_id: ratingSession.id,
+        rating: pendingRating,
+        comment: ratingComment
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setFeedbackMap(prev => ({
+          ...prev,
+          [ratingSession.id]: data.feedback
+        }))
+        setIsRatingModalOpen(false)
+        setRatingSession(null)
+        setPendingRating(0)
+        setRatingComment('')
+        setModalHoveredRating(0)
+      }
+    } catch (error) {
+      console.error('Error submitting rating:', error)
+    }
+    setSubmittingRating(false)
+  }
+
+  const renderSingleStar = (starIndex, rating, size = 'w-5 h-5') => {
+    const fillPercentage = Math.min(Math.max(rating - (starIndex - 1), 0), 1) * 100
+    return (
+      <div className={`relative ${size}`}>
+        <Star className={`${size} text-gray-300`} />
+        <div className="absolute inset-0 overflow-hidden" style={{ width: `${fillPercentage}%` }}>
+          <Star className={`${size} fill-yellow-400 text-yellow-400`} />
+        </div>
+      </div>
+    )
+  }
+
+  const renderStars = (session) => {
+    const existingRating = feedbackMap[session.id]?.rating || 0
+    const displayRating = hoveredRating[session.id] ?? existingRating
+    return (
+      <div 
+        className="flex gap-0.5"
+        onMouseLeave={() => setHoveredRating(prev => ({ ...prev, [session.id]: null }))}
+      >
+        {[1, 2, 3, 4, 5].map((star) => (
+          <button
+            key={star}
+            type="button"
+            onClick={(e) => handleStarClick(session, getStarValue(e, star))}
+            onMouseMove={(e) => setHoveredRating(prev => ({ ...prev, [session.id]: getStarValue(e, star) }))}
+            className="p-0.5 transition-transform hover:scale-110"
+          >
+            {renderSingleStar(star, displayRating)}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
   if (userData?.role !== 'student') {
     return (
       <div className="p-8">
@@ -148,6 +252,7 @@ function StudentSessionHistory({ userData }) {
                 <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Course</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Duration</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Type</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Rating</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Actions</th>
               </tr>
             </thead>
@@ -189,6 +294,9 @@ function StudentSessionHistory({ userData }) {
                       </div>
                     </td>
                     <td className="py-3 px-4">
+                      {renderStars(session)}
+                    </td>
+                    <td className="py-3 px-4">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -202,7 +310,7 @@ function StudentSessionHistory({ userData }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                  <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                     {searchTerm ? 'No sessions found matching your search' : 'No past sessions yet'}
                   </td>
                 </tr>
@@ -284,6 +392,94 @@ function StudentSessionHistory({ userData }) {
               }}
             >
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isRatingModalOpen} onOpenChange={(open) => {
+        setIsRatingModalOpen(open)
+        if (!open) {
+          setRatingSession(null)
+          setPendingRating(0)
+          setRatingComment('')
+          setModalHoveredRating(0)
+        }
+      }}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Rate Your Session</DialogTitle>
+            <DialogDescription>
+              {ratingSession 
+                ? `Session on ${formatDate(ratingSession.start_time)} - ${ratingSession.course || 'Chinese Tutoring'}`
+                : 'Leave your rating'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div 
+              className="flex justify-center gap-2"
+              onMouseLeave={() => setModalHoveredRating(0)}
+            >
+              {[1, 2, 3, 4, 5].map((star) => {
+                const displayRating = modalHoveredRating || pendingRating
+                return (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={(e) => setPendingRating(getStarValue(e, star))}
+                    onMouseMove={(e) => setModalHoveredRating(getStarValue(e, star))}
+                    className="p-1 transition-transform hover:scale-110"
+                  >
+                    {renderSingleStar(star, displayRating, 'w-10 h-10')}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-center text-sm text-muted-foreground">
+              {pendingRating === 0 ? 'Select a rating' : `${pendingRating} star${pendingRating !== 1 ? 's' : ''}`}
+            </p>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium text-foreground">
+                Comments (optional)
+              </label>
+              <textarea
+                value={ratingComment}
+                onChange={(e) => setRatingComment(e.target.value)}
+                placeholder="Share your experience..."
+                rows={3}
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsRatingModalOpen(false)
+                setRatingSession(null)
+                setPendingRating(0)
+                setRatingComment('')
+                setModalHoveredRating(0)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitRating}
+              disabled={submittingRating || pendingRating === 0}
+            >
+              {submittingRating ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  {feedbackMap[ratingSession?.id] ? 'Update Rating' : 'Submit Rating'}
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

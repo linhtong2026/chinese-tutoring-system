@@ -166,6 +166,25 @@ class ApiService {
     })
     return response
   }
+
+  async submitFeedback(getToken, data) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/feedback`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data)
+    })
+    return response
+  }
+
+  async getSessionFeedback(getToken, sessionId) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/sessions/${sessionId}/feedback`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
 }
 
 export default new ApiService()
