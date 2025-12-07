@@ -224,16 +224,18 @@ function Dashboard({ userData }) {
           </div>
         </Card>
 
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground mb-1">Avg Rating</p>
-              <p className="text-3xl font-bold text-foreground">{stats.avg_rating || 'N/A'}</p>
-              <p className="text-xs text-muted-foreground mt-1">From student feedback</p>
+        {isProfessor && (
+          <Card className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Avg Rating</p>
+                <p className="text-3xl font-bold text-foreground">{stats.avg_rating || 'N/A'}</p>
+                <p className="text-xs text-muted-foreground mt-1">From student feedback</p>
+              </div>
+              <TrendingUp className="w-8 h-8 text-muted-foreground" />
             </div>
-            <TrendingUp className="w-8 h-8 text-muted-foreground" />
-          </div>
-        </Card>
+          </Card>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
