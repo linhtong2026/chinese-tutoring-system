@@ -14,6 +14,8 @@ function SessionHistory({ userData }) {
   const [sessions, setSessions] = useState([])
   const [filteredSessions, setFilteredSessions] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedCourse, setSelectedCourse] = useState(null)
+  const [selectedStudent, setSelectedStudent] = useState(null)
   const [isLogModalOpen, setIsLogModalOpen] = useState(false)
   const [selectedSession, setSelectedSession] = useState(null)
   const [sessionNote, setSessionNote] = useState({ attendance_status: '', notes: '', student_feedback: '' })
@@ -48,17 +50,26 @@ function SessionHistory({ userData }) {
   }, [userData?.id, userData?.role, getToken])
 
   useEffect(() => {
-    if (!searchTerm.trim()) {
-      setFilteredSessions(sessions)
-    } else {
+    let filtered = sessions
+
+    if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase()
-      const filtered = sessions.filter(session => 
+      filtered = filtered.filter(session => 
         session.course?.toLowerCase().includes(term) ||
         session.student_name?.toLowerCase().includes(term)
       )
-      setFilteredSessions(filtered)
     }
-  }, [searchTerm, sessions])
+
+    if (selectedCourse && selectedCourse !== 'all') {
+      filtered = filtered.filter(session => session.course === selectedCourse)
+    }
+
+    if (selectedStudent && selectedStudent !== 'all') {
+      filtered = filtered.filter(session => session.student_name === selectedStudent)
+    }
+
+    setFilteredSessions(filtered)
+  }, [searchTerm, selectedCourse, selectedStudent, sessions])
 
   const formatDate = (dateString) => {
     const date = new Date(dateString)
@@ -171,15 +182,41 @@ function SessionHistory({ userData }) {
         </div>
       </div>
 
-      <div className="mb-6 relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          type="text"
-          placeholder="Search sessions by course, student, or tutor..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
-        />
+      <div className="mb-6 space-y-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search sessions by course or student..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <div className="flex gap-3">
+          <Select value={selectedCourse || 'all'} onValueChange={(val) => setSelectedCourse(val === 'all' ? null : val)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by course" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Courses</SelectItem>
+              {Array.from(new Set(sessions.map(s => s.course).filter(Boolean))).sort().map(course => (
+                <SelectItem key={course} value={course}>{course}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={selectedStudent || 'all'} onValueChange={(val) => setSelectedStudent(val === 'all' ? null : val)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by student" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Students</SelectItem>
+              {Array.from(new Set(sessions.map(s => s.student_name).filter(Boolean))).sort().map(student => (
+                <SelectItem key={student} value={student}>{student}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <Card className="p-6">
