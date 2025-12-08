@@ -2537,3 +2537,575 @@ class TestSessionHTTPEndpoints:
                     
                     assert response.status_code == 404
 
+    def test_book_session_http_non_recurring_availability(self, app, student_user, tutor_user, tutor_profile):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_student').first()
+            tutor = Tutor.query.first()
+            
+            av = Availability(
+                tutor_id=tutor.id,
+                day_of_week=2,
+                start_time=datetime(2025, 1, 7, 10, 0),
+                end_time=datetime(2025, 1, 7, 14, 0),
+                session_type='online',
+                is_recurring=False
+            )
+            db.session.add(av)
+            db.session.commit()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    with patch('routes.sessions.send_booking_confirmation'), patch('routes.sessions.send_tutor_notification'):
+                        client = app.test_client()
+                        response = client.post('/api/sessions/book',
+                            data=json.dumps({
+                                'availability_id': av.id,
+                                'start_time': '2025-01-07T10:00:00',
+                                'end_time': '2025-01-07T11:00:00',
+                                'course': 'Chinese 101'
+                            }),
+                            content_type='application/json',
+                            headers={'Authorization': 'Bearer test_token'})
+                        
+                        assert response.status_code == 201
+
+    def test_book_session_http_tutor_notification_exception(self, app, student_user, tutor_user, tutor_profile, availability):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_student').first()
+            av = Availability.query.first()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    with patch('routes.sessions.send_booking_confirmation') as mock_confirm:
+                        with patch('routes.sessions.send_tutor_notification') as mock_notify:
+                            mock_confirm.side_effect = Exception('Email error')
+                            mock_notify.return_value = True
+                            
+                            client = app.test_client()
+                            response = client.post('/api/sessions/book',
+                                data=json.dumps({
+                                    'availability_id': av.id,
+                                    'start_time': '2025-01-06T11:00:00',
+                                    'end_time': '2025-01-06T12:00:00',
+                                    'course': 'Chinese 101'
+                                }),
+                                content_type='application/json',
+                                headers={'Authorization': 'Bearer test_token'})
+                            
+                            assert response.status_code == 201
+
+    def test_tutor_sessions_http_with_invalid_datetime_filter(self, app, tutor_user, session_obj):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_tutor').first()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    client = app.test_client()
+                    response = client.get('/api/tutor/sessions?from=invalid-date&to=also-invalid', headers={'Authorization': 'Bearer test_token'})
+                    
+                    assert response.status_code == 200
+
+    def test_tutor_sessions_http_with_empty_status(self, app, tutor_user, session_obj):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_tutor').first()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    client = app.test_client()
+                    response = client.get('/api/tutor/sessions?status=', headers={'Authorization': 'Bearer test_token'})
+                    
+                    assert response.status_code == 200
+
+    def test_get_sessions_http_with_filters(self, app, tutor_user, student_user, session_obj):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_tutor').first()
+            student = User.query.filter_by(clerk_user_id='clerk_test_student').first()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    client = app.test_client()
+                    response = client.get(f'/api/sessions?tutor_id={user.id}&student_id={student.id}', headers={'Authorization': 'Bearer test_token'})
+                    
+                    assert response.status_code == 200
+
+    def test_book_existing_session_http_not_student(self, app, tutor_user, available_session):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_tutor').first()
+            session = Session.query.filter_by(status='available').first()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    client = app.test_client()
+                    response = client.post(f'/api/sessions/{session.id}/book', headers={'Authorization': 'Bearer test_token'})
+                    
+                    assert response.status_code == 403
+
+    def test_update_session_note_http_all_fields(self, app, tutor_user, session_obj, session_note):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_tutor').first()
+            note = SessionNote.query.first()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    client = app.test_client()
+                    response = client.put(f'/api/session-notes/{note.id}',
+                        data=json.dumps({
+                            'attendance_status': 'attended',
+                            'notes': 'Updated notes',
+                            'student_feedback': 'Updated feedback'
+                        }),
+                        content_type='application/json',
+                        headers={'Authorization': 'Bearer test_token'})
+                    
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert data['note']['attendance_status'] == 'attended'
+                    assert data['note']['notes'] == 'Updated notes'
+                    assert data['note']['student_feedback'] == 'Updated feedback'
+
+    def test_submit_feedback_http_update_existing(self, app, student_user, tutor_user, session_obj, feedback):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_student').first()
+            session = Session.query.first()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    client = app.test_client()
+                    response = client.post('/api/feedback',
+                        data=json.dumps({
+                            'session_id': session.id,
+                            'rating': 4,
+                            'comment': 'Updated comment'
+                        }),
+                        content_type='application/json',
+                        headers={'Authorization': 'Bearer test_token'})
+                    
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert data['feedback']['rating'] == 4
+                    assert data['feedback']['comment'] == 'Updated comment'
+
+    def test_create_session_note_http_with_feedback_email_exception(self, app, tutor_user, student_user):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_tutor').first()
+            student = User.query.filter_by(clerk_user_id='clerk_test_student').first()
+            
+            new_session = Session(
+                tutor_id=user.id,
+                student_id=student.id,
+                course='Chinese 101',
+                session_type='online',
+                start_time=datetime(2025, 3, 10, 10, 0),
+                end_time=datetime(2025, 3, 10, 11, 0),
+                status='booked'
+            )
+            db.session.add(new_session)
+            db.session.commit()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    with patch('routes.sessions.send_feedback_request') as mock_email:
+                        mock_email.side_effect = Exception('Email error')
+                        
+                        client = app.test_client()
+                        response = client.post('/api/session-notes',
+                            data=json.dumps({
+                                'session_id': new_session.id,
+                                'attendance_status': 'present',
+                                'notes': 'Good session'
+                            }),
+                            content_type='application/json',
+                            headers={'Authorization': 'Bearer test_token'})
+                        
+                        assert response.status_code == 201
+
+    def test_professor_dashboard_http_with_sessions_data(self, app, professor_user, tutor_user, student_user):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_professor').first()
+            tutor = User.query.filter_by(clerk_user_id='clerk_test_tutor').first()
+            student = User.query.filter_by(clerk_user_id='clerk_test_student').first()
+            
+            now = datetime.utcnow()
+            session1 = Session(
+                tutor_id=tutor.id,
+                student_id=student.id,
+                course='Chinese 101',
+                session_type='online',
+                start_time=now - timedelta(days=1),
+                end_time=now - timedelta(days=1) + timedelta(hours=1),
+                status='booked'
+            )
+            session2 = Session(
+                tutor_id=tutor.id,
+                student_id=student.id,
+                course='Chinese 201',
+                session_type='online',
+                start_time=now - timedelta(days=2),
+                end_time=now - timedelta(days=2) + timedelta(hours=2),
+                status='booked'
+            )
+            db.session.add_all([session1, session2])
+            db.session.commit()
+            
+            fb = Feedback(
+                session_id=session1.id,
+                student_id=student.id,
+                rating=5,
+                comment='Great!'
+            )
+            note = SessionNote(
+                session_id=session1.id,
+                tutor_id=tutor.id,
+                attendance_status='present',
+                notes='Good'
+            )
+            db.session.add_all([fb, note])
+            db.session.commit()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    client = app.test_client()
+                    response = client.get('/api/professor/dashboard', headers={'Authorization': 'Bearer test_token'})
+                    
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert 'stats' in data
+                    assert 'course_distribution' in data
+                    assert 'top_students' in data
+
+    def test_tutor_dashboard_http_with_sessions_data(self, app, tutor_user, student_user):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_tutor').first()
+            student = User.query.filter_by(clerk_user_id='clerk_test_student').first()
+            
+            now = datetime.utcnow()
+            session1 = Session(
+                tutor_id=user.id,
+                student_id=student.id,
+                course='Chinese 101',
+                session_type='online',
+                start_time=now - timedelta(days=1),
+                end_time=now - timedelta(days=1) + timedelta(hours=1),
+                status='booked'
+            )
+            session2 = Session(
+                tutor_id=user.id,
+                student_id=student.id,
+                course='Chinese 201',
+                session_type='online',
+                start_time=now - timedelta(days=2),
+                end_time=now - timedelta(days=2) + timedelta(hours=2),
+                status='booked'
+            )
+            db.session.add_all([session1, session2])
+            db.session.commit()
+            
+            fb = Feedback(
+                session_id=session1.id,
+                student_id=student.id,
+                rating=5,
+                comment='Great!'
+            )
+            note = SessionNote(
+                session_id=session1.id,
+                tutor_id=user.id,
+                attendance_status='present',
+                notes='Good'
+            )
+            db.session.add_all([fb, note])
+            db.session.commit()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    client = app.test_client()
+                    response = client.get('/api/tutor/dashboard', headers={'Authorization': 'Bearer test_token'})
+                    
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert 'stats' in data
+                    assert 'course_distribution' in data
+                    assert 'top_students' in data
+
+    def test_professor_sessions_http_with_full_data(self, app, professor_user, tutor_user, student_user):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_professor').first()
+            tutor = User.query.filter_by(clerk_user_id='clerk_test_tutor').first()
+            student = User.query.filter_by(clerk_user_id='clerk_test_student').first()
+            
+            session = Session(
+                tutor_id=tutor.id,
+                student_id=student.id,
+                course='Chinese 101',
+                session_type='online',
+                start_time=datetime(2025, 4, 1, 10, 0),
+                end_time=datetime(2025, 4, 1, 11, 0),
+                status='booked'
+            )
+            db.session.add(session)
+            db.session.commit()
+            
+            note = SessionNote(
+                session_id=session.id,
+                tutor_id=tutor.id,
+                attendance_status='present',
+                notes='Good'
+            )
+            fb = Feedback(
+                session_id=session.id,
+                student_id=student.id,
+                rating=5,
+                comment='Great!'
+            )
+            db.session.add_all([note, fb])
+            db.session.commit()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    client = app.test_client()
+                    response = client.get('/api/professor/sessions', headers={'Authorization': 'Bearer test_token'})
+                    
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert data['success'] == True
+                    sessions = data['sessions']
+                    found = False
+                    for s in sessions:
+                        if s.get('tutor_name') and s.get('student_name'):
+                            found = True
+                            break
+                    assert found
+
+    def test_student_sessions_http_with_tutor_name(self, app, student_user, tutor_user):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_student').first()
+            tutor = User.query.filter_by(clerk_user_id='clerk_test_tutor').first()
+            
+            session = Session(
+                tutor_id=tutor.id,
+                student_id=user.id,
+                course='Chinese 101',
+                session_type='online',
+                start_time=datetime(2025, 4, 5, 10, 0),
+                end_time=datetime(2025, 4, 5, 11, 0),
+                status='booked'
+            )
+            db.session.add(session)
+            db.session.commit()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    client = app.test_client()
+                    response = client.get('/api/student/sessions', headers={'Authorization': 'Bearer test_token'})
+                    
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    found = False
+                    for s in data['sessions']:
+                        if s.get('tutor_name') == 'Test Tutor':
+                            found = True
+                            break
+                    assert found
+
+    def test_create_session_note_http_with_late_attendance(self, app, tutor_user, student_user):
+        with app.app_context():
+            user = User.query.filter_by(clerk_user_id='clerk_test_tutor').first()
+            student = User.query.filter_by(clerk_user_id='clerk_test_student').first()
+            
+            new_session = Session(
+                tutor_id=user.id,
+                student_id=student.id,
+                course='Chinese 101',
+                session_type='online',
+                start_time=datetime(2025, 3, 15, 10, 0),
+                end_time=datetime(2025, 3, 15, 11, 0),
+                status='booked'
+            )
+            db.session.add(new_session)
+            db.session.commit()
+            
+            with patch('auth.Clerk') as mock_clerk:
+                mock_sdk = MagicMock()
+                mock_request_state = MagicMock()
+                mock_request_state.is_signed_in = True
+                mock_request_state.payload = {'sub': user.clerk_user_id, 'name': user.name, 'email': user.email}
+                mock_sdk.authenticate_request.return_value = mock_request_state
+                mock_clerk.return_value = mock_sdk
+                
+                with patch('auth.requests.get') as mock_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {'email_addresses': [{'id': 'e1', 'email_address': user.email}]}
+                    mock_get.return_value = mock_response
+                    
+                    with patch('routes.sessions.send_feedback_request') as mock_email:
+                        mock_email.return_value = True
+                        
+                        client = app.test_client()
+                        response = client.post('/api/session-notes',
+                            data=json.dumps({
+                                'session_id': new_session.id,
+                                'attendance_status': 'late',
+                                'notes': 'Arrived late'
+                            }),
+                            content_type='application/json',
+                            headers={'Authorization': 'Bearer test_token'})
+                        
+                        assert response.status_code == 201
+                        mock_email.assert_called_once()
+
