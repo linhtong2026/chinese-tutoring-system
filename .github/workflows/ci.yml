@@ -65,6 +65,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Heroku CLI
+        run: |
+          curl https://cli-assets.heroku.com/install.sh | sh
+
       - name: Deploy to Heroku
         uses: akhileshns/heroku-deploy@v3.13.15
         with:
@@ -79,6 +83,10 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Heroku CLI
+        run: |
+          curl https://cli-assets.heroku.com/install.sh | sh
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -102,4 +110,3 @@ jobs:
           heroku_app_name: ${{ secrets.HEROKU_FRONTEND_APP_NAME }}
           heroku_email: ${{ secrets.HEROKU_EMAIL }}
           appdir: frontend
-
