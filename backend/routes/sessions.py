@@ -4,7 +4,6 @@ from auth import require_auth
 from datetime import datetime
 from sqlalchemy.orm import joinedload, subqueryload
 from services.email_service import send_booking_confirmation, send_tutor_notification, send_feedback_request
-import time
 
 session_bp = Blueprint("session", __name__)
 
@@ -15,8 +14,8 @@ def book_session():
     data = request.get_json() or {}
 
     # Only students can book
-    current_user: User = getattr(request, "db_user", None)
-    if not current_user or current_user.role != "student":
+    current_user: User = request.db_user
+    if current_user.role != "student":
         return jsonify({"error": "Forbidden"}), 403
 
     availability_id = data.get("availability_id")
@@ -48,10 +47,6 @@ def book_session():
         av_end_time = availability.end_time.time()
         req_start_time = start_time.time()
         req_end_time = end_time.time()
-
-        print(f"DEBUG: Recurring availability - comparing times only")
-        print(f"DEBUG: Availability time window: {av_start_time} to {av_end_time}")
-        print(f"DEBUG: Requested time window: {req_start_time} to {req_end_time}")
 
         if not (av_start_time <= req_start_time and req_end_time <= av_end_time):
             return jsonify({"error": "Requested time outside availability window"}), 409
@@ -117,13 +112,7 @@ def book_session():
 @session_bp.route("/api/tutor/sessions", methods=["GET"])
 @require_auth
 def tutor_list_sessions():
-    route_start = time.time()
-    print(f"[TIMING] /api/tutor/sessions - Route started")
-    
-    current_user: User = getattr(request, "db_user", None)
-    if not current_user:
-        return jsonify({"error": "Unauthorized"}), 401
-
+    current_user: User = request.db_user
     tutor_id = request.args.get("tutor_id")
 
     if current_user.role == "tutor":
@@ -143,9 +132,11 @@ def tutor_list_sessions():
             q = q.filter(Session.status.in_(allowed))
 
     def parse_dt(s):
+        if not s:
+            return None
         try:
-            return datetime.fromisoformat(s) if s else None
-        except Exception:
+            return datetime.fromisoformat(s)
+        except ValueError:
             return None
 
     p_from = parse_dt(dt_from)
@@ -155,23 +146,16 @@ def tutor_list_sessions():
     if p_to:
         q = q.filter(Session.end_time <= p_to)
 
-    query_start = time.time()
     sessions = q.order_by(Session.start_time.asc()).all()
-    print(f"[TIMING] /api/tutor/sessions - Session query (with eager load): {(time.time() - query_start)*1000:.2f}ms ({len(sessions)} sessions)")
-    
-    serialize_start = time.time()
     result = [s.to_dict() for s in sessions]
-    print(f"[TIMING] /api/tutor/sessions - Serialization: {(time.time() - serialize_start)*1000:.2f}ms")
-    
-    print(f"[TIMING] /api/tutor/sessions - Total route time: {(time.time() - route_start)*1000:.2f}ms")
     return jsonify({"sessions": result})
 
 
 @session_bp.route("/api/student/sessions", methods=["GET"])
 @require_auth
 def student_my_sessions():
-    current_user: User = getattr(request, "db_user", None)
-    if not current_user or current_user.role != "student":
+    current_user: User = request.db_user
+    if current_user.role != "student":
         return jsonify({"error": "Forbidden"}), 403
 
     sessions = Session.query.options(
@@ -287,8 +271,8 @@ def delete_session(session_id):
 @session_bp.route("/api/sessions/<int:session_id>/book", methods=["POST"])
 @require_auth
 def book_existing_session(session_id):
-    current_user: User = getattr(request, "db_user", None)
-    if not current_user or current_user.role != "student":
+    current_user: User = request.db_user
+    if current_user.role != "student":
         return jsonify({"error": "Forbidden"}), 403
 
     session = Session.query.get(session_id)
@@ -308,8 +292,8 @@ def book_existing_session(session_id):
 @session_bp.route("/api/session-notes", methods=["POST"])
 @require_auth
 def create_session_note():
-    current_user: User = getattr(request, "db_user", None)
-    if not current_user or current_user.role != "tutor":
+    current_user: User = request.db_user
+    if current_user.role != "tutor":
         return jsonify({"error": "Forbidden"}), 403
 
     data = request.get_json()
@@ -364,8 +348,8 @@ def create_session_note():
 @session_bp.route("/api/session-notes/<int:note_id>", methods=["PUT"])
 @require_auth
 def update_session_note(note_id):
-    current_user: User = getattr(request, "db_user", None)
-    if not current_user or current_user.role != "tutor":
+    current_user: User = request.db_user
+    if current_user.role != "tutor":
         return jsonify({"error": "Forbidden"}), 403
 
     note = SessionNote.query.get(note_id)
@@ -394,10 +378,6 @@ def update_session_note(note_id):
 @session_bp.route("/api/sessions/<int:session_id>/note", methods=["GET"])
 @require_auth
 def get_session_note(session_id):
-    current_user: User = getattr(request, "db_user", None)
-    if not current_user:
-        return jsonify({"error": "Unauthorized"}), 401
-
     session = Session.query.get(session_id)
     if not session:
         return jsonify({"error": "Session not found"}), 404
@@ -413,10 +393,7 @@ def get_session_note(session_id):
 @session_bp.route("/api/feedback", methods=["POST"])
 @require_auth
 def submit_feedback():
-    current_user: User = getattr(request, "db_user", None)
-    if not current_user:
-        return jsonify({"error": "Unauthorized"}), 401
-
+    current_user: User = request.db_user
     data = request.get_json()
     session_id = data.get("session_id")
     rating = data.get("rating")
@@ -457,10 +434,6 @@ def submit_feedback():
 @session_bp.route("/api/sessions/<int:session_id>/feedback", methods=["GET"])
 @require_auth
 def get_session_feedback(session_id):
-    current_user: User = getattr(request, "db_user", None)
-    if not current_user:
-        return jsonify({"error": "Unauthorized"}), 401
-
     session = Session.query.get(session_id)
     if not session:
         return jsonify({"error": "Session not found"}), 404
@@ -658,30 +631,23 @@ def professor_get_dashboard():
 @session_bp.route("/api/tutor/dashboard", methods=["GET"])
 @require_auth
 def tutor_get_dashboard():
-    route_start = time.time()
-    print(f"[TIMING] /api/tutor/dashboard - Route started")
-    
     current_user: User = getattr(request, 'db_user', None)
     if not current_user or current_user.role != 'tutor':
         return jsonify({"error": "Forbidden"}), 403
 
-    query_start = time.time()
     sessions = Session.query.options(
         joinedload(Session.student_user)
     ).filter(
         Session.tutor_id == current_user.id,
         Session.status == 'booked'
     ).all()
-    print(f"[TIMING] /api/tutor/dashboard - Session query (with eager load): {(time.time() - query_start)*1000:.2f}ms ({len(sessions)} sessions)")
 
     session_ids = [s.id for s in sessions]
     
-    batch_start = time.time()
     feedbacks = Feedback.query.filter(Feedback.session_id.in_(session_ids)).all() if session_ids else []
     feedback_map = {f.session_id: f for f in feedbacks}
     notes = SessionNote.query.filter(SessionNote.session_id.in_(session_ids)).all() if session_ids else []
     notes_map = {n.session_id: n for n in notes}
-    print(f"[TIMING] /api/tutor/dashboard - Batch queries (Feedback + Notes): {(time.time() - batch_start)*1000:.2f}ms (2 queries)")
 
     total_sessions = len(sessions)
     
@@ -765,7 +731,6 @@ def tutor_get_dashboard():
     top_students = [{'name': name, 'count': count} 
                    for name, count in sorted(student_counts.items(), key=lambda x: x[1], reverse=True)[:5]]
 
-    print(f"[TIMING] /api/tutor/dashboard - Total route time: {(time.time() - route_start)*1000:.2f}ms")
     return jsonify({
         "success": True,
         "stats": {

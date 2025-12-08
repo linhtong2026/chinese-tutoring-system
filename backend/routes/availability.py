@@ -10,20 +10,16 @@ availability_bp = Blueprint("availability", __name__)
 @require_auth
 def create_availability():
     data = request.get_json()
-
-    # Create availability for the authenticated tutor user.
-    db_user = getattr(request, "db_user", None)
-    if not db_user:
-        return jsonify({"error": "Unauthorized"}), 401
+    db_user = request.db_user
+    
     if db_user.role != "tutor":
         return jsonify({"error": "Forbidden"}), 403
 
-    # Ensure a Tutor profile exists for this user (1:1); create if missing.
     tutor = Tutor.query.filter_by(user_id=db_user.id).first()
     if not tutor:
         tutor = Tutor(user_id=db_user.id)
         db.session.add(tutor)
-        db.session.flush()  # obtain tutor.id without committing yet
+        db.session.flush()
 
     day_of_week = data.get("day_of_week")
     start_time_str = data.get("start_time")
@@ -31,20 +27,8 @@ def create_availability():
     session_type = data.get("session_type")
     is_recurring = data.get("is_recurring", True)
 
-    if (
-        day_of_week is None
-        or not start_time_str
-        or not end_time_str
-        or not session_type
-    ):
-        return (
-            jsonify(
-                {
-                    "error": "day_of_week, start_time, end_time, and session_type are required"
-                }
-            ),
-            400,
-        )
+    if day_of_week is None or not start_time_str or not end_time_str or not session_type:
+        return jsonify({"error": "day_of_week, start_time, end_time, and session_type are required"}), 400
 
     if session_type not in ["online", "in-person"]:
         return jsonify({"error": "session_type must be 'online' or 'in-person'"}), 400
@@ -52,8 +36,8 @@ def create_availability():
     try:
         start_time = datetime.fromisoformat(start_time_str)
         end_time = datetime.fromisoformat(end_time_str)
-    except ValueError as e:
-        return jsonify({"error": f"Invalid datetime format: {str(e)}"}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid datetime format"}), 400
 
     availability = Availability(
         tutor_id=tutor.id,
@@ -73,8 +57,8 @@ def create_availability():
 @availability_bp.route("/api/availability", methods=["GET"])
 @require_auth
 def get_availability():
-    tutor_id = request.args.get("tutor_id")  # legacy: Tutor.id
-    user_id = request.args.get("user_id")  # preferred: Users.id
+    tutor_id = request.args.get("tutor_id")
+    user_id = request.args.get("user_id")
 
     if user_id:
         tutor = Tutor.query.filter_by(user_id=user_id).first()
@@ -101,46 +85,25 @@ def update_availability(availability_id):
 
     data = request.get_json()
 
-    if "tutor_id" in data:
-        tutor = Tutor.query.get(data["tutor_id"])
-        if not tutor:
-            return jsonify({"error": "Tutor not found"}), 404
-        availability.tutor_id = data["tutor_id"]
-
     if "day_of_week" in data:
         availability.day_of_week = data["day_of_week"]
-
-    if "start_time" in data:
-        try:
-            availability.start_time = datetime.fromisoformat(data["start_time"])
-        except ValueError as e:
-            return (
-                jsonify({"error": f"Invalid datetime format for start_time: {str(e)}"}),
-                400,
-            )
-
-    if "end_time" in data:
-        try:
-            availability.end_time = datetime.fromisoformat(data["end_time"])
-        except ValueError as e:
-            return (
-                jsonify({"error": f"Invalid datetime format for end_time: {str(e)}"}),
-                400,
-            )
-
     if "session_type" in data:
         if data["session_type"] not in ["online", "in-person"]:
-            return (
-                jsonify({"error": "session_type must be 'online' or 'in-person'"}),
-                400,
-            )
+            return jsonify({"error": "session_type must be 'online' or 'in-person'"}), 400
         availability.session_type = data["session_type"]
-
     if "is_recurring" in data:
         availability.is_recurring = data["is_recurring"]
 
-    db.session.commit()
+    if "start_time" in data or "end_time" in data:
+        try:
+            if "start_time" in data:
+                availability.start_time = datetime.fromisoformat(data["start_time"])
+            if "end_time" in data:
+                availability.end_time = datetime.fromisoformat(data["end_time"])
+        except ValueError:
+            return jsonify({"error": "Invalid datetime format"}), 400
 
+    db.session.commit()
     return jsonify({"success": True, "availability": availability.to_dict()})
 
 
