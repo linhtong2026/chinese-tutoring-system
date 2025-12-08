@@ -2,6 +2,7 @@ from functools import wraps
 from flask import request, jsonify
 import os
 import requests
+import time
 from clerk_backend_api import Clerk
 from clerk_backend_api.security.types import AuthenticateRequestOptions
 from models import db, User
@@ -62,9 +63,11 @@ def _extract_display_name(payload, fallback_email=""):
 def require_auth(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Skip authentication for OPTIONS requests (CORS preflight)
         if request.method == "OPTIONS":
             return f(*args, **kwargs)
+
+        auth_start = time.time()
+        print(f"[TIMING] Auth - Started for {request.path}")
 
         sdk = Clerk(bearer_auth=os.environ.get("CLERK_SECRET_KEY"))
 
@@ -73,6 +76,7 @@ def require_auth(f):
             if not (secret and user_id):
                 return None
             try:
+                clerk_api_start = time.time()
                 resp = requests.get(
                     f"https://api.clerk.dev/v1/users/{user_id}",
                     headers={
@@ -80,6 +84,7 @@ def require_auth(f):
                         "Content-Type": "application/json",
                     },
                 )
+                print(f"[TIMING] Auth - Clerk API call: {(time.time() - clerk_api_start)*1000:.2f}ms")
                 if resp.status_code == 200:
                     return resp.json()
             except Exception as exc:
@@ -89,16 +94,16 @@ def require_auth(f):
                 )
 
         try:
-            # Try without authorized_parties first, fallback to with restriction if needed
+            jwt_start = time.time()
             try:
                 request_state = sdk.authenticate_request(request)
             except Exception:
-                # If that fails, try with authorized_parties
                 authorized_party = os.environ.get("AUTHORIZED_PARTY")
                 options = AuthenticateRequestOptions(
                     authorized_parties=[authorized_party]
                 )
                 request_state = sdk.authenticate_request(request, options)
+            print(f"[TIMING] Auth - JWT verification: {(time.time() - jwt_start)*1000:.2f}ms")
 
             if not request_state.is_signed_in:
                 return jsonify({"error": "Unauthorized"}), 401
@@ -124,10 +129,14 @@ def require_auth(f):
             email = _extract_email(merged_payload)
             name = _extract_display_name(merged_payload, email)
 
+            db_start = time.time()
             db_user = User.get_or_create_from_clerk(clerk_user_id, name, email)
+            print(f"[TIMING] Auth - DB user lookup/create: {(time.time() - db_start)*1000:.2f}ms")
+            
             request.db_user = db_user
             request.clerk_user = request_state.payload
 
+            print(f"[TIMING] Auth - Total auth time: {(time.time() - auth_start)*1000:.2f}ms")
             return f(*args, **kwargs)
         except Exception:
             return jsonify({"error": "Unauthorized"}), 401

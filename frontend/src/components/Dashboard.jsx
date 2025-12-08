@@ -35,13 +35,22 @@ function Dashboard({ userData }) {
   const [selectedClass, setSelectedClass] = useState(null)
   const [selectedTutor, setSelectedTutor] = useState(null)
 
+  const isProfessor = userData?.role === 'professor'
+  const isTutor = userData?.role === 'tutor'
+
   useEffect(() => {
     const fetchDashboard = async () => {
-      if (!userData || userData.role !== 'professor') return
+      if (!userData || (!isProfessor && !isTutor)) return
       
       try {
-        const response = await api.getProfessorDashboard(getToken, selectedClass, selectedTutor)
-        if (response.ok) {
+        let response
+        if (isProfessor) {
+          response = await api.getProfessorDashboard(getToken, selectedClass, selectedTutor)
+        } else if (isTutor) {
+          response = await api.getTutorDashboard(getToken)
+        }
+        
+        if (response && response.ok) {
           const data = await response.json()
           setDashboardData(data)
         }
@@ -59,7 +68,7 @@ function Dashboard({ userData }) {
     }, 30000)
     
     return () => clearInterval(intervalId)
-  }, [userData, getToken, selectedClass, selectedTutor])
+  }, [userData, getToken, selectedClass, selectedTutor, isProfessor, isTutor])
 
   if (loading || !dashboardData) {
     return (
@@ -70,6 +79,7 @@ function Dashboard({ userData }) {
   }
 
   const { stats, weekly_data, monthly_attendance, course_distribution, top_students, filters } = dashboardData
+  const hasFilters = isProfessor && filters
   
   const weeklyChartData = {
     labels: weekly_data.map(d => d.week),
@@ -147,32 +157,36 @@ function Dashboard({ userData }) {
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground mb-2">Dashboard</h1>
-            <p className="text-muted-foreground">Monitor tutoring program activity and insights</p>
+            <p className="text-muted-foreground">
+              {isProfessor ? 'Monitor tutoring program activity and insights' : 'Track your tutoring sessions and performance'}
+            </p>
           </div>
-          <div className="flex gap-3">
-            <Select value={selectedClass || 'all'} onValueChange={(val) => setSelectedClass(val === 'all' ? null : val)}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filter by class" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Classes</SelectItem>
-                {filters.classes.map(cls => (
-                  <SelectItem key={cls} value={cls}>{cls}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedTutor || 'all'} onValueChange={(val) => setSelectedTutor(val === 'all' ? null : val)}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filter by tutor" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Tutors</SelectItem>
-                {filters.tutors.map(tutor => (
-                  <SelectItem key={tutor.id} value={tutor.id.toString()}>{tutor.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {hasFilters && (
+            <div className="flex gap-3">
+              <Select value={selectedClass || 'all'} onValueChange={(val) => setSelectedClass(val === 'all' ? null : val)}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter by class" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Classes</SelectItem>
+                  {filters.classes.map(cls => (
+                    <SelectItem key={cls} value={cls}>{cls}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedTutor || 'all'} onValueChange={(val) => setSelectedTutor(val === 'all' ? null : val)}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter by tutor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Tutors</SelectItem>
+                  {filters.tutors.map(tutor => (
+                    <SelectItem key={tutor.id} value={tutor.id.toString()}>{tutor.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -182,7 +196,7 @@ function Dashboard({ userData }) {
             <div>
               <p className="text-sm text-muted-foreground mb-1">Total Sessions</p>
               <p className="text-3xl font-bold text-foreground">{stats.total_sessions}</p>
-              <p className="text-xs text-muted-foreground mt-1">Booked sessions</p>
+              <p className="text-xs text-muted-foreground mt-1">{isTutor ? 'Your sessions' : 'Booked sessions'}</p>
             </div>
             <Calendar className="w-8 h-8 text-muted-foreground" />
           </div>
@@ -193,7 +207,7 @@ function Dashboard({ userData }) {
             <div>
               <p className="text-sm text-muted-foreground mb-1">Hours Logged</p>
               <p className="text-3xl font-bold text-foreground">{stats.total_hours}</p>
-              <p className="text-xs text-muted-foreground mt-1">Across all courses</p>
+              <p className="text-xs text-muted-foreground mt-1">{isTutor ? 'Your tutoring hours' : 'Across all courses'}</p>
             </div>
             <Clock className="w-8 h-8 text-muted-foreground" />
           </div>
@@ -204,28 +218,32 @@ function Dashboard({ userData }) {
             <div>
               <p className="text-sm text-muted-foreground mb-1">Active Students</p>
               <p className="text-3xl font-bold text-foreground">{stats.active_students}</p>
-              <p className="text-xs text-muted-foreground mt-1">This semester</p>
+              <p className="text-xs text-muted-foreground mt-1">{isTutor ? 'Your students' : 'This semester'}</p>
             </div>
             <Users className="w-8 h-8 text-muted-foreground" />
           </div>
         </Card>
 
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground mb-1">Avg Rating</p>
-              <p className="text-3xl font-bold text-foreground">{stats.avg_rating || 'N/A'}</p>
-              <p className="text-xs text-muted-foreground mt-1">From student feedback</p>
+        {isProfessor && (
+          <Card className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Avg Rating</p>
+                <p className="text-3xl font-bold text-foreground">{stats.avg_rating || 'N/A'}</p>
+                <p className="text-xs text-muted-foreground mt-1">From student feedback</p>
+              </div>
+              <TrendingUp className="w-8 h-8 text-muted-foreground" />
             </div>
-            <TrendingUp className="w-8 h-8 text-muted-foreground" />
-          </div>
-        </Card>
+          </Card>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <Card className="p-6">
           <h2 className="text-lg font-semibold text-foreground mb-2">Sessions & Hours by Week</h2>
-          <p className="text-sm text-muted-foreground mb-6">Track tutoring activity over time</p>
+          <p className="text-sm text-muted-foreground mb-6">
+            {isTutor ? 'Track your tutoring activity over time' : 'Track tutoring activity over time'}
+          </p>
           
           <div style={{ height: '300px' }}>
             <Bar data={weeklyChartData} options={weeklyChartOptions} />
@@ -234,7 +252,9 @@ function Dashboard({ userData }) {
 
         <Card className="p-6">
           <h2 className="text-lg font-semibold text-foreground mb-2">Attendance Rate</h2>
-          <p className="text-sm text-muted-foreground mb-6">Monthly attendance percentage</p>
+          <p className="text-sm text-muted-foreground mb-6">
+            {isTutor ? 'Your monthly attendance percentage' : 'Monthly attendance percentage'}
+          </p>
           
           <div style={{ height: '250px' }}>
             <Line data={attendanceChartData} options={attendanceChartOptions} />
@@ -245,7 +265,9 @@ function Dashboard({ userData }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6">
           <h2 className="text-lg font-semibold text-foreground mb-2">Course Distribution</h2>
-          <p className="text-sm text-muted-foreground mb-4">Sessions by course</p>
+          <p className="text-sm text-muted-foreground mb-4">
+            {isTutor ? 'Your sessions by course' : 'Sessions by course'}
+          </p>
           
           <div className="space-y-3">
             {Object.keys(course_distribution).length > 0 ? (
@@ -272,7 +294,9 @@ function Dashboard({ userData }) {
         </Card>
 
         <Card className="p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-2">Student Attendance</h2>
+          <h2 className="text-lg font-semibold text-foreground mb-2">
+            {isTutor ? 'Students You\'ve Tutored' : 'Student Attendance'}
+          </h2>
           <p className="text-sm text-muted-foreground mb-4">Top students by session count</p>
           
           <div className="space-y-3">

@@ -157,6 +157,15 @@ class ApiService {
     })
     return response
   }
+
+  async getTutorDashboard(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/tutor/dashboard`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
 }
 
 export default new ApiService()
