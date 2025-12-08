@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useAuth } from '@clerk/clerk-react'
-import { Calendar, ChevronLeft, ChevronRight, Monitor, MapPin, Plus, CalendarIcon } from 'lucide-react'
+import { Calendar, ChevronLeft, ChevronRight, Monitor, MapPin, Plus, CalendarIcon, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
@@ -43,6 +43,10 @@ function Sessions({ userData }) {
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false)
   const [isDaySlotsModalOpen, setIsDaySlotsModalOpen] = useState(false)
   const [daySlotsModalData, setDaySlotsModalData] = useState({ date: null, slots: [] })
+  const [professorFilterCourse, setProfessorFilterCourse] = useState(null)
+  const [professorFilterTutor, setProfessorFilterTutor] = useState(null)
+  const [professorFilterStudent, setProfessorFilterStudent] = useState(null)
+  const [professorFilteredSessions, setProfessorFilteredSessions] = useState([])
 
   const getWeekStart = (date) => {
     const d = new Date(date)
@@ -142,6 +146,26 @@ function Sessions({ userData }) {
     
     return () => clearInterval(intervalId)
   }, [userData?.id, userData?.role, getToken])
+
+  useEffect(() => {
+    if (userData?.role === 'professor') {
+      let filtered = sessions
+
+      if (professorFilterCourse && professorFilterCourse !== 'all') {
+        filtered = filtered.filter(session => session.course === professorFilterCourse)
+      }
+
+      if (professorFilterTutor && professorFilterTutor !== 'all') {
+        filtered = filtered.filter(session => session.tutor_name === professorFilterTutor)
+      }
+
+      if (professorFilterStudent && professorFilterStudent !== 'all') {
+        filtered = filtered.filter(session => session.student_name === professorFilterStudent)
+      }
+
+      setProfessorFilteredSessions(filtered)
+    }
+  }, [sessions, professorFilterCourse, professorFilterTutor, professorFilterStudent, userData?.role])
   
   useEffect(() => {
     const fetchTutorAvailability = async () => {
@@ -723,7 +747,30 @@ function Sessions({ userData }) {
     setIsNoteModalOpen(true)
   }
 
+  const renderReadOnlyStars = (rating) => {
+    if (!rating) return <span className="text-sm text-muted-foreground">—</span>
+    return (
+      <div className="flex gap-0.5">
+        {[1, 2, 3, 4, 5].map((star) => {
+          const fillPercentage = Math.min(Math.max(rating - (star - 1), 0), 1) * 100
+          return (
+            <div key={star} className="relative w-4 h-4">
+              <Star className="w-4 h-4 text-gray-300 absolute inset-0" />
+              <div className="absolute inset-0 overflow-hidden" style={{ width: `${fillPercentage}%` }}>
+                <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   if (userData?.role === 'professor') {
+    const displaySessions = professorFilteredSessions.length > 0 || professorFilterCourse || professorFilterTutor || professorFilterStudent 
+      ? professorFilteredSessions 
+      : sessions
+
     return (
       <div className="p-8">
         <div className="mb-6">
@@ -733,6 +780,42 @@ function Sessions({ userData }) {
           <p className="text-muted-foreground">
             View all tutoring sessions and notes
           </p>
+        </div>
+
+        <div className="mb-6 flex gap-3">
+          <Select value={professorFilterCourse || 'all'} onValueChange={(val) => setProfessorFilterCourse(val === 'all' ? null : val)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by course" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Courses</SelectItem>
+              {Array.from(new Set(sessions.map(s => s.course).filter(Boolean))).sort().map(course => (
+                <SelectItem key={course} value={course}>{course}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={professorFilterTutor || 'all'} onValueChange={(val) => setProfessorFilterTutor(val === 'all' ? null : val)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by tutor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Tutors</SelectItem>
+              {Array.from(new Set(sessions.map(s => s.tutor_name).filter(Boolean))).sort().map(tutor => (
+                <SelectItem key={tutor} value={tutor}>{tutor}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={professorFilterStudent || 'all'} onValueChange={(val) => setProfessorFilterStudent(val === 'all' ? null : val)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by student" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Students</SelectItem>
+              {Array.from(new Set(sessions.map(s => s.student_name).filter(Boolean))).sort().map(student => (
+                <SelectItem key={student} value={student}>{student}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Card className="p-6">
@@ -747,12 +830,13 @@ function Sessions({ userData }) {
                   <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Course</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Type</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Status</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Rating</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-foreground">Notes</th>
                 </tr>
               </thead>
               <tbody>
-                {sessions.length > 0 ? (
-                  sessions.map((session) => {
+                {displaySessions.length > 0 ? (
+                  displaySessions.map((session) => {
                     const startDate = session.start_time ? new Date(session.start_time) : null
                     const endDate = session.end_time ? new Date(session.end_time) : null
                     
@@ -797,6 +881,9 @@ function Sessions({ userData }) {
                           </span>
                         </td>
                         <td className="py-3 px-4">
+                          {renderReadOnlyStars(session.feedback?.rating)}
+                        </td>
+                        <td className="py-3 px-4">
                           {session.note ? (
                             <Button
                               variant="outline"
@@ -814,8 +901,10 @@ function Sessions({ userData }) {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
-                      No sessions found
+                    <td colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
+                      {professorFilterCourse || professorFilterTutor || professorFilterStudent 
+                        ? 'No sessions found matching filters' 
+                        : 'No sessions found'}
                     </td>
                   </tr>
                 )}

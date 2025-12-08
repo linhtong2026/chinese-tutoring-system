@@ -39,36 +39,44 @@ function Dashboard({ userData }) {
   const isTutor = userData?.role === 'tutor'
 
   useEffect(() => {
-    const fetchDashboard = async () => {
-      if (!userData || (!isProfessor && !isTutor)) return
-      
+    if (!userData) return
+    
+    const role = userData.role
+    if (role !== 'professor' && role !== 'tutor') return
+
+    let isCancelled = false
+    
+    const fetchDashboard = async (isInitial = false) => {
       try {
         let response
-        if (isProfessor) {
+        if (role === 'professor') {
           response = await api.getProfessorDashboard(getToken, selectedClass, selectedTutor)
-        } else if (isTutor) {
+        } else {
           response = await api.getTutorDashboard(getToken)
         }
         
-        if (response && response.ok) {
+        if (!isCancelled && response && response.ok) {
           const data = await response.json()
           setDashboardData(data)
+          if (isInitial) setLoading(false)
         }
       } catch (error) {
-        console.error('Error fetching dashboard:', error)
-      } finally {
-        setLoading(false)
+        if (!isCancelled) {
+          console.error('Error fetching dashboard:', error)
+          if (isInitial) setLoading(false)
+        }
       }
     }
 
-    fetchDashboard()
+    fetchDashboard(true)
     
-    const intervalId = setInterval(() => {
-      fetchDashboard()
-    }, 30000)
+    const intervalId = setInterval(() => fetchDashboard(false), 30000)
     
-    return () => clearInterval(intervalId)
-  }, [userData, getToken, selectedClass, selectedTutor, isProfessor, isTutor])
+    return () => {
+      isCancelled = true
+      clearInterval(intervalId)
+    }
+  }, [userData?.role, selectedClass, selectedTutor])
 
   if (loading || !dashboardData) {
     return (
