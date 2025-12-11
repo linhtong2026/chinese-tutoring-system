@@ -30,10 +30,12 @@ def create_test_app():
     from routes.availability import availability_bp
     from routes.sessions import session_bp
     from routes.matching import matching_bp
+    from routes.invitations import invitations_bp
     
     app.register_blueprint(availability_bp)
     app.register_blueprint(session_bp)
     app.register_blueprint(matching_bp)
+    app.register_blueprint(invitations_bp)
     
     from zoneinfo import ZoneInfo
     NY_TZ = ZoneInfo("America/New_York")
