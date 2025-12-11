@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@clerk/clerk-react'
-import { Calendar, Clock, Users, TrendingUp } from 'lucide-react'
+import { Calendar, Users } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Bar, Line } from 'react-chartjs-2'
@@ -86,19 +86,12 @@ function Dashboard({ userData }) {
     )
   }
 
-  const { stats, weekly_data, monthly_attendance, course_distribution, top_students, filters } = dashboardData
+  const { stats, weekly_data, weekly_ratings, course_distribution, top_students, filters } = dashboardData
   const hasFilters = isProfessor && filters
   
   const weeklyChartData = {
     labels: weekly_data.map(d => d.week),
     datasets: [
-      {
-        label: 'Hours',
-        data: weekly_data.map(d => d.hours),
-        backgroundColor: 'rgba(34, 197, 94, 0.5)',
-        borderColor: 'rgba(34, 197, 94, 1)',
-        borderWidth: 2,
-      },
       {
         label: 'Sessions',
         data: weekly_data.map(d => d.sessions),
@@ -120,41 +113,6 @@ function Dashboard({ userData }) {
     scales: {
       y: {
         beginAtZero: true,
-      }
-    }
-  }
-
-  const attendanceChartData = {
-    labels: monthly_attendance.map(m => m.month),
-    datasets: [
-      {
-        label: 'Attendance %',
-        data: monthly_attendance.map(m => m.rate),
-        borderColor: 'rgba(59, 130, 246, 1)',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        tension: 0.4,
-        fill: true,
-      }
-    ]
-  }
-
-  const attendanceChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        max: 100,
-        ticks: {
-          callback: function(value) {
-            return value + '%'
-          }
-        }
       }
     }
   }
@@ -198,7 +156,7 @@ function Dashboard({ userData }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className={`grid grid-cols-1 md:grid-cols-2 ${isProfessor ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-6 mb-8`}>
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -213,17 +171,6 @@ function Dashboard({ userData }) {
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground mb-1">Hours Logged</p>
-              <p className="text-3xl font-bold text-foreground">{stats.total_hours}</p>
-              <p className="text-xs text-muted-foreground mt-1">{isTutor ? 'Your tutoring hours' : 'Across all courses'}</p>
-            </div>
-            <Clock className="w-8 h-8 text-muted-foreground" />
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
               <p className="text-sm text-muted-foreground mb-1">Active Students</p>
               <p className="text-3xl font-bold text-foreground">{stats.active_students}</p>
               <p className="text-xs text-muted-foreground mt-1">{isTutor ? 'Your students' : 'This semester'}</p>
@@ -231,24 +178,11 @@ function Dashboard({ userData }) {
             <Users className="w-8 h-8 text-muted-foreground" />
           </div>
         </Card>
-
-        {isProfessor && (
-          <Card className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">Avg Rating</p>
-                <p className="text-3xl font-bold text-foreground">{stats.avg_rating || 'N/A'}</p>
-                <p className="text-xs text-muted-foreground mt-1">From student feedback</p>
-              </div>
-              <TrendingUp className="w-8 h-8 text-muted-foreground" />
-            </div>
-          </Card>
-        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <div className={`grid grid-cols-1 ${isProfessor ? 'lg:grid-cols-2' : 'lg:grid-cols-1'} gap-6 mb-8`}>
         <Card className="p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-2">Sessions & Hours by Week</h2>
+          <h2 className="text-lg font-semibold text-foreground mb-2">Sessions by Week</h2>
           <p className="text-sm text-muted-foreground mb-6">
             {isTutor ? 'Track your tutoring activity over time' : 'Track tutoring activity over time'}
           </p>
@@ -258,16 +192,50 @@ function Dashboard({ userData }) {
           </div>
         </Card>
 
-        <Card className="p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-2">Attendance Rate</h2>
-          <p className="text-sm text-muted-foreground mb-6">
-            {isTutor ? 'Your monthly attendance percentage' : 'Monthly attendance percentage'}
-          </p>
-          
-          <div style={{ height: '250px' }}>
-            <Line data={attendanceChartData} options={attendanceChartOptions} />
-          </div>
-        </Card>
+        {isProfessor && weekly_ratings && (
+          <Card className="p-6">
+            <h2 className="text-lg font-semibold text-foreground mb-2">Average Rating</h2>
+            <p className="text-sm text-muted-foreground mb-6">
+              Average rating by week from student feedback
+            </p>
+            
+            <div style={{ height: '300px' }}>
+              <Line 
+                data={{
+                  labels: weekly_ratings.map(r => r.week),
+                  datasets: [
+                    {
+                      label: 'Avg Rating',
+                      data: weekly_ratings.map(r => r.rating),
+                      borderColor: 'rgba(34, 197, 94, 1)',
+                      backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                      tension: 0.4,
+                      fill: true,
+                    }
+                  ]
+                }} 
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: {
+                      display: false,
+                    },
+                  },
+                  scales: {
+                    y: {
+                      beginAtZero: true,
+                      max: 5,
+                      ticks: {
+                        stepSize: 0.5
+                      }
+                    }
+                  }
+                }} 
+              />
+            </div>
+          </Card>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
