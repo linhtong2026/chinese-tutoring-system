@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useAuth } from '@clerk/clerk-react'
-import { Calendar, ChevronLeft, ChevronRight, Monitor, MapPin, Plus, CalendarIcon, Star } from 'lucide-react'
+import { Calendar, ChevronLeft, ChevronRight, Monitor, MapPin, Plus, CalendarIcon, Star, Edit, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
@@ -49,6 +49,17 @@ function Sessions({ userData }) {
   const [professorFilterTutor, setProfessorFilterTutor] = useState(null)
   const [professorFilterStudent, setProfessorFilterStudent] = useState(null)
   const [professorFilteredSessions, setProfessorFilteredSessions] = useState([])
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isSlotOptionsDialogOpen, setIsSlotOptionsDialogOpen] = useState(false)
+  const [selectedAvailability, setSelectedAvailability] = useState(null)
+  const [editScope, setEditScope] = useState(null)
+  const [editFormData, setEditFormData] = useState({
+    startTime: '',
+    endTime: '',
+    sessionType: 'online'
+  })
+  const [originalDuration, setOriginalDuration] = useState(0)
 
   const availabilities = useMemo(() => {
     if (userData?.role !== 'student') {
@@ -808,6 +819,152 @@ function Sessions({ userData }) {
   const handleViewNote = (session) => {
     setSelectedSession(session)
     setIsNoteModalOpen(true)
+  }
+
+  const handleSlotClick = (slot) => {
+    if (!slot.availability) return
+    setSelectedAvailability(slot.availability)
+    setIsSlotOptionsDialogOpen(true)
+  }
+
+  const handleEditClick = () => {
+    if (!selectedAvailability) return
+
+    const parseNYCTime = (isoString) => {
+      const match = isoString.match(/T(\d{2}):(\d{2}):\d{2}/)
+      if (match) {
+        return {
+          hours: parseInt(match[1]),
+          minutes: parseInt(match[2]),
+          formatted: `${match[1]}:${match[2]}`
+        }
+      }
+      return { hours: 0, minutes: 0, formatted: '00:00' }
+    }
+
+    const startTime = parseNYCTime(selectedAvailability.start_time)
+    const endTime = parseNYCTime(selectedAvailability.end_time)
+    
+    const startMinutes = startTime.hours * 60 + startTime.minutes
+    const endMinutes = endTime.hours * 60 + endTime.minutes
+    const durationMinutes = endMinutes - startMinutes
+    setOriginalDuration(durationMinutes > 0 ? durationMinutes : durationMinutes + 1440)
+
+    setEditFormData({
+      startTime: startTime.formatted,
+      endTime: endTime.formatted,
+      sessionType: selectedAvailability.session_type
+    })
+    setEditScope(selectedAvailability.is_recurring ? null : 'this')
+    setIsSlotOptionsDialogOpen(false)
+    setIsEditDialogOpen(true)
+  }
+
+  const handleStartTimeChange = (newStartTime) => {
+    if (!newStartTime || !originalDuration) {
+      setEditFormData(prev => ({ ...prev, startTime: newStartTime }))
+      return
+    }
+
+    const [startHours, startMinutes] = newStartTime.split(':').map(Number)
+    const startTotalMinutes = startHours * 60 + startMinutes
+    const endTotalMinutes = startTotalMinutes + originalDuration
+    
+    const endHours = Math.floor(endTotalMinutes / 60) % 24
+    const endMinutes = endTotalMinutes % 60
+    const newEndTime = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`
+
+    setEditFormData(prev => ({
+      ...prev,
+      startTime: newStartTime,
+      endTime: newEndTime
+    }))
+  }
+
+  const handleDeleteClick = () => {
+    setIsSlotOptionsDialogOpen(false)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleScopeSelection = async (scope) => {
+    setEditScope(scope)
+  }
+
+  const handleEditConfirm = async () => {
+    if (!selectedAvailability || !editScope) return
+
+    try {
+      const selectedDate = new Date(selectedAvailability.start_time)
+      const [startHours, startMinutes] = editFormData.startTime.split(':').map(Number)
+      const [endHours, endMinutes] = editFormData.endTime.split(':').map(Number)
+
+      if (editScope === 'all') {
+        const updateData = {
+          start_time: new Date(Date.UTC(2000, 0, 1, startHours, startMinutes)).toISOString(),
+          end_time: new Date(Date.UTC(2000, 0, 1, endHours, endMinutes)).toISOString(),
+          session_type: editFormData.sessionType
+        }
+
+        const response = await api.updateAvailability(getToken, selectedAvailability.id, updateData)
+        if (response.ok) {
+          const data = await response.json()
+          setAllAvailabilities(prev => prev.map(av => av.id === selectedAvailability.id ? data.availability : av))
+        } else {
+          const error = await response.json()
+          alert(`Error updating availability: ${error.error || 'Unknown error'}`)
+          return
+        }
+      } else {
+        const specificDate = new Date(selectedDate)
+        specificDate.setUTCHours(startHours, startMinutes, 0, 0)
+        const endDateTime = new Date(selectedDate)
+        endDateTime.setUTCHours(endHours, endMinutes, 0, 0)
+
+        const newAvailabilityData = {
+          day_of_week: specificDate.getDay(),
+          start_time: specificDate.toISOString(),
+          end_time: endDateTime.toISOString(),
+          session_type: editFormData.sessionType,
+          is_recurring: false
+        }
+
+        const response = await api.createAvailability(getToken, newAvailabilityData)
+        if (response.ok) {
+          const data = await response.json()
+          setAllAvailabilities(prev => [...prev, data.availability])
+        } else {
+          const error = await response.json()
+          alert(`Error creating new availability: ${error.error || 'Unknown error'}`)
+          return
+        }
+      }
+
+      setIsEditDialogOpen(false)
+      setSelectedAvailability(null)
+      setEditScope(null)
+    } catch (error) {
+      console.error('Error updating availability:', error)
+      alert('Failed to update availability')
+    }
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedAvailability) return
+
+    try {
+      const response = await api.deleteAvailability(getToken, selectedAvailability.id)
+      if (response.ok) {
+        setAllAvailabilities(prev => prev.filter(av => av.id !== selectedAvailability.id))
+        setIsDeleteDialogOpen(false)
+        setSelectedAvailability(null)
+      } else {
+        const error = await response.json()
+        alert(`Error deleting availability: ${error.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error deleting availability:', error)
+      alert('Failed to delete availability')
+    }
   }
 
   const renderReadOnlyStars = (rating) => {
@@ -1707,6 +1864,7 @@ function Sessions({ userData }) {
                               return (
                                 <div
                                   key={slot.id}
+                                  onClick={() => !isPastSlot && slot.availability && handleSlotClick(slot)}
                                   className={cn(
                                     "p-1 rounded text-[9px] flex items-center gap-1",
                                     isPastSlot
@@ -1714,8 +1872,8 @@ function Sessions({ userData }) {
                                       : slot.session && slot.session.status === 'booked'
                                       ? "bg-gray-100 text-gray-800 border border-gray-200"
                                       : slot.session
-                                      ? "bg-blue-100 text-blue-800 border border-blue-200"
-                                      : "bg-blue-100 text-blue-800 border border-blue-200"
+                                      ? "bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer hover:bg-blue-200"
+                                      : "bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer hover:bg-blue-200"
                                   )}
                                 >
                                   {slot.type === 'online' ? (
@@ -1795,6 +1953,7 @@ function Sessions({ userData }) {
                         return (
                           <div
                             key={slot.id}
+                            onClick={() => !isPastSlot && slot.availability && handleSlotClick(slot)}
                             className={cn(
                               "p-1.5 rounded text-[10px] flex items-center gap-1.5",
                               isPastSlot
@@ -1802,8 +1961,8 @@ function Sessions({ userData }) {
                                 : slot.session && slot.session.status === 'booked'
                                 ? "bg-gray-200 text-gray-800 border border-gray-300"
                                 : slot.session
-                                ? "bg-blue-100 text-blue-800 border border-blue-200"
-                                : "bg-blue-100 text-blue-800 border border-blue-200"
+                                ? "bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer hover:bg-blue-200"
+                                : "bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer hover:bg-blue-200"
                             )}
                           >
                             {slot.type === 'online' ? (
@@ -1920,6 +2079,189 @@ function Sessions({ userData }) {
           </table>
         </div>
       </Card>
+
+      <Dialog open={isSlotOptionsDialogOpen} onOpenChange={setIsSlotOptionsDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Manage Availability</DialogTitle>
+            <DialogDescription>
+              Choose an action for this availability slot
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-3 py-4">
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-4"
+              onClick={handleEditClick}
+            >
+              <Edit className="w-5 h-5 mr-3" />
+              <div className="text-left">
+                <div className="font-medium">Edit</div>
+                <div className="text-xs text-muted-foreground">Modify time or session type</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-4 text-destructive hover:text-destructive"
+              onClick={handleDeleteClick}
+            >
+              <Trash2 className="w-5 h-5 mr-3" />
+              <div className="text-left">
+                <div className="font-medium">Delete</div>
+                <div className="text-xs text-muted-foreground">Remove this availability</div>
+              </div>
+            </Button>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsSlotOptionsDialogOpen(false)
+                setSelectedAvailability(null)
+              }}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Edit Availability</DialogTitle>
+            <DialogDescription>
+              {selectedAvailability?.is_recurring 
+                ? 'Choose whether to edit this occurrence or all recurring occurrences'
+                : 'Edit this availability slot'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedAvailability && (
+            <div className="space-y-4 py-4">
+              {!editScope && selectedAvailability.is_recurring ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    This is a recurring availability. How would you like to edit it?
+                  </p>
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => handleScopeSelection('this')}
+                    >
+                      <Calendar className="w-4 h-4 mr-2" />
+                      This occurrence only
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => handleScopeSelection('all')}
+                    >
+                      <Calendar className="w-4 h-4 mr-2" />
+                      All occurrences
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-start-time">Start Time</Label>
+                    <Input
+                      id="edit-start-time"
+                      type="time"
+                      value={editFormData.startTime}
+                      onChange={(e) => handleStartTimeChange(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-end-time">End Time</Label>
+                    <Input
+                      id="edit-end-time"
+                      type="time"
+                      value={editFormData.endTime}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, endTime: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-session-type">Session Type</Label>
+                    <Select value={editFormData.sessionType} onValueChange={(value) => setEditFormData(prev => ({ ...prev, sessionType: value }))}>
+                      <SelectTrigger id="edit-session-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="online">Online</SelectItem>
+                        <SelectItem value="in-person">In-Person</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsEditDialogOpen(false)
+                setSelectedAvailability(null)
+                setEditScope(null)
+              }}
+            >
+              Cancel
+            </Button>
+            {(editScope || !selectedAvailability?.is_recurring) && (
+              <Button type="button" onClick={handleEditConfirm}>
+                Save Changes
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Delete Availability</DialogTitle>
+            <DialogDescription>
+              {selectedAvailability?.is_recurring 
+                ? 'This will delete the recurring availability'
+                : 'This will delete this availability slot'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete this availability? This action cannot be undone.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false)
+                setSelectedAvailability(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="button" 
+              variant="destructive"
+              onClick={() => handleDeleteConfirm()}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Availability Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>

@@ -105,7 +105,35 @@ class ApiService {
     return response
   }
 
+  async updateAvailability(getToken, availabilityId, data) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/availability/${availabilityId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data)
+    })
+    return response
+  }
+
+  async deleteAvailability(getToken, availabilityId) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/availability/${availabilityId}`, {
+      method: 'DELETE',
+      headers
+    })
+    return response
+  }
+
   async getTutors(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/tutors`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async getAllTutors(getToken) {
     const headers = await this.getAuthHeaders(getToken)
     const response = await fetch(`${API_URL}/api/tutors`, {
       method: 'GET',
