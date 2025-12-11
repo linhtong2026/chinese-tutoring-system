@@ -77,6 +77,24 @@ class ApiService {
     return response
   }
 
+  async getAllAvailability(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/availability/all`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async getAllSessions(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/sessions/all`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
   async createAvailability(getToken, data) {
     const headers = await this.getAuthHeaders(getToken)
     const response = await fetch(`${API_URL}/api/availability`, {
@@ -87,7 +105,35 @@ class ApiService {
     return response
   }
 
+  async updateAvailability(getToken, availabilityId, data) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/availability/${availabilityId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data)
+    })
+    return response
+  }
+
+  async deleteAvailability(getToken, availabilityId) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/availability/${availabilityId}`, {
+      method: 'DELETE',
+      headers
+    })
+    return response
+  }
+
   async getTutors(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/tutors`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async getAllTutors(getToken) {
     const headers = await this.getAuthHeaders(getToken)
     const response = await fetch(`${API_URL}/api/tutors`, {
       method: 'GET',
@@ -182,6 +228,44 @@ class ApiService {
     const response = await fetch(`${API_URL}/api/sessions/${sessionId}/feedback`, {
       method: 'GET',
       headers
+    })
+    return response
+  }
+
+  async getRecommendedTutors(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/matching/recommend`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async sendInvitation(getToken, email, role) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/invitations`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email, role })
+    })
+    return response
+  }
+
+  async getInvitations(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/invitations`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async checkInvitation(token) {
+    const response = await fetch(`${API_URL}/api/invitations/check/${token}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
     })
     return response
   }

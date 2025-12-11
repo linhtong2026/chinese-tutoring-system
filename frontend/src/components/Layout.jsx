@@ -7,7 +7,8 @@ import {
   History,
   User,
   Menu,
-  Calendar
+  Calendar,
+  Users
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -26,6 +27,7 @@ function Layout({ children, currentPage, onPageChange, userData }) {
     ? [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'sessions', label: 'Sessions', icon: FileText },
+        { id: 'users', label: 'Manage Users', icon: Users },
       ]
     : [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },

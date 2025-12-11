@@ -8,6 +8,7 @@ import SessionHistory from './components/SessionHistory'
 import StudentSessionHistory from './components/StudentSessionHistory'
 import Dashboard from './components/Dashboard'
 import FeedbackPage from './components/FeedbackPage'
+import UserManagement from './components/UserManagement'
 import api from './services/api'
 
 function App() {
@@ -68,6 +69,8 @@ function App() {
         return userData?.role === 'student' 
           ? <StudentSessionHistory userData={userData} />
           : <SessionHistory userData={userData} />
+      case 'users':
+        return <UserManagement userData={userData} />
       default:
         if (userData?.role === 'professor' || userData?.role === 'tutor') {
           return <Dashboard userData={userData} />

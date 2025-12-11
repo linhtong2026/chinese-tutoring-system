@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useUser, useAuth } from '@clerk/clerk-react'
 import api from '../services/api'
 
@@ -12,6 +12,36 @@ function OnboardingForm({ onComplete }) {
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState(null)
+  const [invitationToken, setInvitationToken] = useState(null)
+  const [invitationData, setInvitationData] = useState(null)
+  const [checkingInvitation, setCheckingInvitation] = useState(true)
+
+  useEffect(() => {
+    const checkInvitation = async () => {
+      const urlParams = new URLSearchParams(window.location.search)
+      const token = urlParams.get('invitation')
+      
+      if (token) {
+        setInvitationToken(token)
+        try {
+          const response = await api.checkInvitation(token)
+          if (response.ok) {
+            const data = await response.json()
+            setInvitationData(data.invitation)
+          } else {
+            const errorData = await response.json()
+            setError(errorData.error || 'Invalid invitation')
+          }
+        } catch (error) {
+          console.error('Error checking invitation:', error)
+          setError('Failed to verify invitation')
+        }
+      }
+      setCheckingInvitation(false)
+    }
+    
+    checkInvitation()
+  }, [])
 
   const steps = [
     {
@@ -53,10 +83,16 @@ function OnboardingForm({ onComplete }) {
     setError(null)
     
     try {
-      const response = await api.completeOnboarding(getToken, {
+      const payload = {
         language: formData.language,
         class_name: formData.class_name
-      })
+      }
+      
+      if (invitationToken) {
+        payload.invitation_token = invitationToken
+      }
+      
+      const response = await api.completeOnboarding(getToken, payload)
 
       const data = await response.json()
 
@@ -79,6 +115,16 @@ function OnboardingForm({ onComplete }) {
   const isLastStep = currentStep === steps.length - 1
   const canProceed = currentStepData.questions.every(q => formData[q.id]) && !isSubmitting
 
+  if (checkingInvitation) {
+    return (
+      <div className="onboarding-container">
+        <div className="onboarding-card">
+          <p>Checking invitation...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="onboarding-container">
       <div className="onboarding-card">
@@ -90,6 +136,20 @@ function OnboardingForm({ onComplete }) {
         </div>
         
         <h2 className="step-title">{currentStepData.title}</h2>
+        
+        {invitationData && (
+          <div className="invitation-info" style={{
+            padding: '12px',
+            backgroundColor: '#e0f2fe',
+            border: '1px solid #7dd3fc',
+            borderRadius: '6px',
+            marginBottom: '16px'
+          }}>
+            <p style={{ margin: 0, fontSize: '14px', color: '#0c4a6e' }}>
+              You've been invited to join as a <strong style={{ textTransform: 'capitalize' }}>{invitationData.role}</strong>
+            </p>
+          </div>
+        )}
         
         {error && (
           <div className="error-message">

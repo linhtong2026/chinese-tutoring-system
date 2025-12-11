@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useAuth } from '@clerk/clerk-react'
-import { Calendar, ChevronLeft, ChevronRight, Monitor, MapPin, Plus, CalendarIcon, Star } from 'lucide-react'
+import { Calendar, ChevronLeft, ChevronRight, Monitor, MapPin, Plus, CalendarIcon, Star, Edit, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
@@ -23,8 +23,8 @@ function Sessions({ userData }) {
   const { getToken } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [sessions, setSessions] = useState([])
-  const [availabilities, setAvailabilities] = useState([])
+  const [allSessions, setAllSessions] = useState([])
+  const [allAvailabilities, setAllAvailabilities] = useState([])
   const [tutorId, setTutorId] = useState(null)
   const [formData, setFormData] = useState({
     date: '',
@@ -36,6 +36,8 @@ function Sessions({ userData }) {
   })
   const [tutors, setTutors] = useState([])
   const [selectedTutor, setSelectedTutor] = useState(null)
+  const [showAllTutors, setShowAllTutors] = useState(false)
+  const [recommendedTutorId, setRecommendedTutorId] = useState(null)
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [viewMode, setViewMode] = useState('month')
@@ -47,6 +49,45 @@ function Sessions({ userData }) {
   const [professorFilterTutor, setProfessorFilterTutor] = useState(null)
   const [professorFilterStudent, setProfessorFilterStudent] = useState(null)
   const [professorFilteredSessions, setProfessorFilteredSessions] = useState([])
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isSlotOptionsDialogOpen, setIsSlotOptionsDialogOpen] = useState(false)
+  const [selectedAvailability, setSelectedAvailability] = useState(null)
+  const [selectedSlotDate, setSelectedSlotDate] = useState(null)
+  const [editScope, setEditScope] = useState(null)
+  const [editFormData, setEditFormData] = useState({
+    startTime: '',
+    endTime: '',
+    sessionType: 'online'
+  })
+  const [originalDuration, setOriginalDuration] = useState(0)
+  const [isSaving, setIsSaving] = useState(false)
+
+  const availabilities = useMemo(() => {
+    if (userData?.role !== 'student') {
+      return allAvailabilities
+    }
+    if (showAllTutors) {
+      return allAvailabilities
+    }
+    if (selectedTutor?.id) {
+      return allAvailabilities.filter(av => av.tutor_id === selectedTutor.id)
+    }
+    return []
+  }, [allAvailabilities, showAllTutors, selectedTutor?.id, userData?.role])
+
+  const sessions = useMemo(() => {
+    if (userData?.role !== 'student') {
+      return allSessions
+    }
+    if (showAllTutors) {
+      return allSessions
+    }
+    if (selectedTutor?.user_id) {
+      return allSessions.filter(s => s.tutor_id === selectedTutor.user_id)
+    }
+    return []
+  }, [allSessions, showAllTutors, selectedTutor?.user_id, userData?.role])
 
   const getWeekStart = (date) => {
     const d = new Date(date)
@@ -76,7 +117,7 @@ function Sessions({ userData }) {
           const response = await api.getProfessorSessions(getToken)
           if (response.ok) {
             const data = await response.json()
-            setSessions(data.sessions || [])
+            setAllSessions(data.sessions || [])
           }
         } else if (userData.role === 'tutor') {
           const tutorResponse = await api.getTutorByUser(getToken, userData.id)
@@ -92,26 +133,45 @@ function Sessions({ userData }) {
             
             if (sessionsResponse.ok) {
               const sessionsData = await sessionsResponse.json()
-              setSessions(sessionsData.sessions || [])
+              setAllSessions(sessionsData.sessions || [])
             }
             
             if (availabilityResponse.ok) {
               const availabilityData = await availabilityResponse.json()
-              setAvailabilities(availabilityData.availabilities || [])
+              setAllAvailabilities(availabilityData.availabilities || [])
             }
           } else {
             const errorData = await tutorResponse.json()
             console.error('Error fetching tutor:', errorData)
           }
         } else if (userData.role === 'student') {
-          const [tutorsResponse, sessionsResponse] = await Promise.all([
+          const [tutorsResponse, sessionsResponse, recommendResponse] = await Promise.all([
             api.getTutors(getToken),
-            api.getStudentSessions(getToken)
+            api.getStudentSessions(getToken),
+            api.getRecommendedTutors(getToken)
           ])
+          
+          let topRecommendedTutorId = null
+          if (recommendResponse.ok) {
+            const recommendData = await recommendResponse.json()
+            if (recommendData.recommendations && recommendData.recommendations.length > 0) {
+              topRecommendedTutorId = recommendData.recommendations[0].tutor_id
+              setRecommendedTutorId(topRecommendedTutorId)
+            }
+          }
           
           if (tutorsResponse.ok) {
             const tutorsData = await tutorsResponse.json()
-            const fetchedTutors = tutorsData.tutors || []
+            let fetchedTutors = tutorsData.tutors || []
+            
+            if (topRecommendedTutorId) {
+              fetchedTutors = fetchedTutors.sort((a, b) => {
+                if (a.user_id === topRecommendedTutorId) return -1
+                if (b.user_id === topRecommendedTutorId) return 1
+                return 0
+              })
+            }
+            
             setTutors(fetchedTutors)
             if (fetchedTutors.length > 0) {
               setSelectedTutor((prevSelected) => {
@@ -130,7 +190,7 @@ function Sessions({ userData }) {
           
           if (sessionsResponse.ok) {
             const sessionsData = await sessionsResponse.json()
-            setSessions(sessionsData.sessions || [])
+            setAllSessions(sessionsData.sessions || [])
           }
         }
       } catch (error) {
@@ -168,48 +228,45 @@ function Sessions({ userData }) {
   }, [sessions, professorFilterCourse, professorFilterTutor, professorFilterStudent, userData?.role])
   
   useEffect(() => {
-    const fetchTutorAvailability = async () => {
-      if (userData?.role === 'student' && selectedTutor?.id) {
+    const fetchAllData = async () => {
+      if (userData?.role === 'student') {
         try {
-          const [availabilityResponse, tutorSessionsResponse] = await Promise.all([
-            api.getAvailability(getToken, selectedTutor.id),
-            api.getSessions(getToken, selectedTutor.user_id)
+          const [availabilityResponse, sessionsResponse] = await Promise.all([
+            api.getAllAvailability(getToken),
+            api.getAllSessions(getToken)
           ])
           
           if (availabilityResponse.ok) {
             const availabilityData = await availabilityResponse.json()
-            setAvailabilities(availabilityData.availabilities || [])
+            setAllAvailabilities((availabilityData.availabilities || []).map(av => ({
+              ...av,
+              tutorId: av.tutor_id,
+              tutorName: av.tutor_name || 'Unknown',
+              tutorUserId: av.tutor_user_id
+            })))
           }
           
-          if (tutorSessionsResponse.ok) {
-            const tutorSessionsData = await tutorSessionsResponse.json()
-            setSessions(prevSessions => {
-              const allSessions = [...prevSessions]
-              const tutorSessions = tutorSessionsData.sessions || []
-              
-              tutorSessions.forEach(ts => {
-                if (!allSessions.find(s => s.id === ts.id)) {
-                  allSessions.push(ts)
-                }
-              })
-              
-              return allSessions
-            })
+          if (sessionsResponse.ok) {
+            const sessionsData = await sessionsResponse.json()
+            setAllSessions((sessionsData.sessions || []).map(s => ({
+              ...s,
+              tutorName: s.tutor_name || 'Unknown'
+            })))
           }
         } catch (error) {
-          console.error('Error fetching tutor availability:', error)
+          console.error('Error fetching data:', error)
         }
       }
     }
     
-    fetchTutorAvailability()
+    fetchAllData()
     
     const intervalId = setInterval(() => {
-      fetchTutorAvailability()
+      fetchAllData()
     }, 10000)
     
     return () => clearInterval(intervalId)
-  }, [selectedTutor?.id, selectedTutor?.user_id, userData?.role, getToken])
+  }, [userData?.role, getToken])
 
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   const daySlotsModalDateLabel = daySlotsModalData.date
@@ -374,6 +431,18 @@ function Sessions({ userData }) {
     const dayOfWeek = date.getDay()
     const slots = []
     
+    const hasOneTimeAvailabilityForThisDay = availabilities.some(av => {
+      if (!av.is_recurring && av.start_time) {
+        const match = av.start_time.match(/(\d{4})-(\d{2})-(\d{2})/)
+        if (match) {
+          const [, year, month, day] = match.map(Number)
+          const avDateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          return avDateKey === dateKey && dayOfWeek === av.day_of_week
+        }
+      }
+      return false
+    })
+    
     const sessionMap = new Map()
     sessions.forEach(session => {
       if (!session.start_time) return
@@ -427,6 +496,10 @@ function Sessions({ userData }) {
       }
       
       if (appliesToThisDay) {
+        if (av.is_recurring && hasOneTimeAvailabilityForThisDay) {
+          return
+        }
+        
         const baseDate = new Date(date)
         baseDate.setHours(startNYC.hours, startNYC.minutes, 0, 0)
         
@@ -467,6 +540,9 @@ function Sessions({ userData }) {
             isAvailable: !sessionInSlot,
             availability: av,
             slotIndex: slotIndex,
+            tutorId: av.tutorId,
+            tutorName: av.tutorName,
+            tutorUserId: av.tutorUserId,
             session: sessionInSlot ? {
               id: sessionInSlot.id,
               status: sessionInSlot.status === 'booked' ? 'booked' : 'available',
@@ -520,7 +596,9 @@ function Sessions({ userData }) {
     const slotMap = new Map()
     
     for (const slot of slots) {
-      const slotKey = slot.timeSort.toString()
+      const slotKey = showAllTutors 
+        ? `${slot.tutorId || 'default'}-${slot.timeSort}` 
+        : slot.timeSort.toString()
       
       if (slotMap.has(slotKey)) {
         const existingSlot = slotMap.get(slotKey)
@@ -639,7 +717,7 @@ function Sessions({ userData }) {
       if (response.ok) {
         const data = await response.json()
         console.log('Availability created:', data)
-        setAvailabilities([...availabilities, data.availability])
+        setAllAvailabilities([...allAvailabilities, data.availability])
         setIsModalOpen(false)
         setFormData({
           date: '',
@@ -676,8 +754,14 @@ function Sessions({ userData }) {
     setIsDaySlotsModalOpen(true)
   }
   
-  const confirmBooking = async (course) => {
-    if (!selectedSlot || !selectedTutor) return
+  const confirmBooking = async () => {
+    if (!selectedSlot) return
+    
+    const slotTutor = showAllTutors 
+      ? tutors.find(t => t.id === selectedSlot.tutorId)
+      : selectedTutor
+    
+    if (!slotTutor && !showAllTutors) return
     
     try {
       const av = selectedSlot.availability
@@ -708,8 +792,7 @@ function Sessions({ userData }) {
       const bookingData = {
         availability_id: availabilityId,
         start_time: startTimeStr,
-        end_time: endTimeStr,
-        course: course || ''
+        end_time: endTimeStr
       }
       
       const response = await api.bookSession(getToken, bookingData)
@@ -718,19 +801,27 @@ function Sessions({ userData }) {
         setIsBookingModalOpen(false)
         setSelectedSlot(null)
         
-        const [availabilityResponse, tutorSessionsResponse] = await Promise.all([
-          api.getAvailability(getToken, selectedTutor.id),
-          api.getSessions(getToken, selectedTutor.user_id)
+        const [availabilityResponse, sessionsResponse] = await Promise.all([
+          api.getAllAvailability(getToken),
+          api.getAllSessions(getToken)
         ])
         
         if (availabilityResponse.ok) {
           const availabilityData = await availabilityResponse.json()
-          setAvailabilities(availabilityData.availabilities || [])
+          setAllAvailabilities((availabilityData.availabilities || []).map(av => ({
+            ...av,
+            tutorId: av.tutor_id,
+            tutorName: av.tutor_name || 'Unknown',
+            tutorUserId: av.tutor_user_id
+          })))
         }
         
-        if (tutorSessionsResponse.ok) {
-          const tutorSessionsData = await tutorSessionsResponse.json()
-          setSessions(tutorSessionsData.sessions || [])
+        if (sessionsResponse.ok) {
+          const sessionsData = await sessionsResponse.json()
+          setAllSessions((sessionsData.sessions || []).map(s => ({
+            ...s,
+            tutorName: s.tutor_name || 'Unknown'
+          })))
         }
       } else {
         const errorData = await response.json()
@@ -745,6 +836,196 @@ function Sessions({ userData }) {
   const handleViewNote = (session) => {
     setSelectedSession(session)
     setIsNoteModalOpen(true)
+  }
+
+  const handleSlotClick = (slot, date) => {
+    if (!slot.availability) return
+    setSelectedAvailability(slot.availability)
+    setSelectedSlotDate(date)
+    setIsSlotOptionsDialogOpen(true)
+  }
+
+  const handleEditClick = () => {
+    if (!selectedAvailability) return
+
+    const parseNYCTime = (isoString) => {
+      const match = isoString.match(/T(\d{2}):(\d{2}):\d{2}/)
+      if (match) {
+        return {
+          hours: parseInt(match[1]),
+          minutes: parseInt(match[2]),
+          formatted: `${match[1]}:${match[2]}`
+        }
+      }
+      return { hours: 0, minutes: 0, formatted: '00:00' }
+    }
+
+    const startTime = parseNYCTime(selectedAvailability.start_time)
+    const endTime = parseNYCTime(selectedAvailability.end_time)
+    
+    const startMinutes = startTime.hours * 60 + startTime.minutes
+    const endMinutes = endTime.hours * 60 + endTime.minutes
+    const durationMinutes = endMinutes - startMinutes
+    setOriginalDuration(durationMinutes > 0 ? durationMinutes : durationMinutes + 1440)
+
+    setEditFormData({
+      startTime: startTime.formatted,
+      endTime: endTime.formatted,
+      sessionType: selectedAvailability.session_type
+    })
+    setEditScope(selectedAvailability.is_recurring ? null : 'this')
+    setIsSlotOptionsDialogOpen(false)
+    setIsEditDialogOpen(true)
+  }
+
+  const handleStartTimeChange = (newStartTime) => {
+    if (!newStartTime || !originalDuration) {
+      setEditFormData(prev => ({ ...prev, startTime: newStartTime }))
+      return
+    }
+
+    const [startHours, startMinutes] = newStartTime.split(':').map(Number)
+    const startTotalMinutes = startHours * 60 + startMinutes
+    const endTotalMinutes = startTotalMinutes + originalDuration
+    
+    const endHours = Math.floor(endTotalMinutes / 60) % 24
+    const endMinutes = endTotalMinutes % 60
+    const newEndTime = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`
+
+    setEditFormData(prev => ({
+      ...prev,
+      startTime: newStartTime,
+      endTime: newEndTime
+    }))
+  }
+
+  const handleDeleteClick = () => {
+    setIsSlotOptionsDialogOpen(false)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleScopeSelection = async (scope) => {
+    setEditScope(scope)
+  }
+
+  const handleEditConfirm = async () => {
+    if (!selectedAvailability || !editScope) {
+      console.log('Cannot save: selectedAvailability:', selectedAvailability, 'editScope:', editScope)
+      return
+    }
+
+    console.log('Saving availability edit...', { selectedAvailability, editScope, editFormData })
+    setIsSaving(true)
+
+    try {
+      const [startHours, startMinutes] = editFormData.startTime.split(':').map(Number)
+      const [endHours, endMinutes] = editFormData.endTime.split(':').map(Number)
+      
+      console.log('Parsed times:', { startHours, startMinutes, endHours, endMinutes })
+
+      if (editScope === 'all' || !selectedAvailability.is_recurring) {
+        console.log('Updating availability (all occurrences or non-recurring)')
+        
+        let startTimeISO, endTimeISO
+        if (!selectedAvailability.is_recurring) {
+          const useDate = selectedSlotDate || new Date()
+          const dateStr = `${useDate.getFullYear()}-${String(useDate.getMonth() + 1).padStart(2, '0')}-${String(useDate.getDate()).padStart(2, '0')}`
+          startTimeISO = `${dateStr}T${String(startHours).padStart(2, '0')}:${String(startMinutes).padStart(2, '0')}:00`
+          endTimeISO = `${dateStr}T${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}:00`
+        } else {
+          startTimeISO = `2000-01-01T${String(startHours).padStart(2, '0')}:${String(startMinutes).padStart(2, '0')}:00`
+          endTimeISO = `2000-01-01T${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}:00`
+        }
+        
+        const updateData = {
+          start_time: startTimeISO,
+          end_time: endTimeISO,
+          session_type: editFormData.sessionType
+        }
+
+        console.log('Calling updateAvailability API with:', updateData)
+        const response = await api.updateAvailability(getToken, selectedAvailability.id, updateData)
+        console.log('API response status:', response.status)
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log('Update successful:', data)
+          setAllAvailabilities(prev => prev.map(av => av.id === selectedAvailability.id ? data.availability : av))
+          setIsEditDialogOpen(false)
+        } else {
+          const error = await response.json()
+          console.error('API error:', error)
+        }
+      } else {
+        console.log('Edit scope is THIS - creating new one-time availability')
+        
+        const useDate = selectedSlotDate || new Date()
+        const dateStr = `${useDate.getFullYear()}-${String(useDate.getMonth() + 1).padStart(2, '0')}-${String(useDate.getDate()).padStart(2, '0')}`
+        console.log('Using date:', dateStr, 'from selectedSlotDate:', selectedSlotDate)
+        
+        const startTimeISO = `${dateStr}T${String(startHours).padStart(2, '0')}:${String(startMinutes).padStart(2, '0')}:00`
+        const endTimeISO = `${dateStr}T${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}:00`
+        console.log('ISO times:', { startTimeISO, endTimeISO })
+        
+        const dayOfWeekMatch = selectedAvailability.start_time.match(/(\d{4})-(\d{2})-(\d{2})/)
+        let dayOfWeek = 0
+        if (dayOfWeekMatch) {
+          const tempDate = new Date(`${dayOfWeekMatch[1]}-${dayOfWeekMatch[2]}-${dayOfWeekMatch[3]}`)
+          dayOfWeek = tempDate.getDay()
+        }
+        console.log('Day of week:', dayOfWeek)
+
+        const newAvailabilityData = {
+          day_of_week: dayOfWeek,
+          start_time: startTimeISO,
+          end_time: endTimeISO,
+          session_type: editFormData.sessionType,
+          is_recurring: false
+        }
+        console.log('Calling createAvailability API with:', newAvailabilityData)
+
+        const response = await api.createAvailability(getToken, newAvailabilityData)
+        console.log('API response status:', response.status)
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log('Create successful:', data)
+          setAllAvailabilities(prev => [...prev, data.availability])
+          setIsEditDialogOpen(false)
+        } else {
+          const error = await response.json()
+          console.error('API error:', error)
+        }
+      }
+
+      setSelectedAvailability(null)
+      setSelectedSlotDate(null)
+      setEditScope(null)
+    } catch (error) {
+      console.error('Error updating availability:', error)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedAvailability) return
+
+    try {
+      const response = await api.deleteAvailability(getToken, selectedAvailability.id)
+      if (response.ok) {
+        setAllAvailabilities(prev => prev.filter(av => av.id !== selectedAvailability.id))
+        setIsDeleteDialogOpen(false)
+        setSelectedAvailability(null)
+        setSelectedSlotDate(null)
+      } else {
+        const error = await response.json()
+        alert(`Error deleting availability: ${error.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error deleting availability:', error)
+      alert('Failed to delete availability')
+    }
   }
 
   const renderReadOnlyStars = (rating) => {
@@ -1016,25 +1297,69 @@ function Sessions({ userData }) {
             <h2 className="text-lg font-semibold text-foreground mb-4">Select Tutor</h2>
             <p className="text-sm text-muted-foreground mb-4">Choose a tutor to view their availability</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div
+                onClick={() => {
+                  setShowAllTutors(true)
+                  setSelectedTutor(null)
+                }}
+                className={cn(
+                  "p-4 border rounded-lg cursor-pointer transition-all relative",
+                  showAllTutors
+                    ? "border-primary bg-primary/5 ring-2 ring-primary"
+                    : "border-border hover:border-primary/50"
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/40 flex items-center justify-center">
+                    <span className="text-lg font-semibold text-primary">★</span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-medium text-foreground">All Tutors</div>
+                    <div className="text-sm text-muted-foreground">View all availability</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-muted-foreground">{tutors.length} tutors</span>
+                    </div>
+                  </div>
+                  {showAllTutors && (
+                    <div className="text-xs font-medium px-2 py-1 bg-primary text-primary-foreground rounded">
+                      Selected
+                    </div>
+                  )}
+                </div>
+              </div>
               {tutors.map((tutor) => {
                 const tutorName = tutor.user?.name?.trim();
                 const tutorEmail = tutor.user?.email;
                 const displayName = (tutorName && tutorName.length > 0) ? tutorName : (tutorEmail || 'Tutor');
                 const displayInitial = (displayName[0] || 'T').toUpperCase();
+                const isRecommended = tutor.user_id === recommendedTutorId;
                 
                 return (
                 <div
                   key={tutor.id}
-                  onClick={() => setSelectedTutor(tutor)}
+                  onClick={() => {
+                    setSelectedTutor(tutor)
+                    setShowAllTutors(false)
+                  }}
                   className={cn(
-                    "p-4 border rounded-lg cursor-pointer transition-all",
-                    selectedTutor?.id === tutor.id
+                    "p-4 border rounded-lg cursor-pointer transition-all relative",
+                    isRecommended && "ring-2 ring-yellow-400",
+                    selectedTutor?.id === tutor.id && !showAllTutors
                       ? "border-primary bg-primary/5"
                       : "border-border hover:border-primary/50"
                   )}
                 >
+                  {isRecommended && (
+                    <div className="absolute -top-2 -right-2 flex items-center gap-1 bg-gradient-to-r from-yellow-400 to-amber-500 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full shadow-sm">
+                      <Star className="w-3 h-3 fill-white" />
+                      <span>Recommended</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                    <div className={cn(
+                      "w-10 h-10 rounded-full flex items-center justify-center",
+                      isRecommended ? "bg-gradient-to-br from-yellow-100 to-amber-200" : "bg-muted"
+                    )}>
                       <span className="text-lg font-semibold">{displayInitial}</span>
                     </div>
                     <div className="flex-1">
@@ -1050,7 +1375,7 @@ function Sessions({ userData }) {
                         )}
                       </div>
                     </div>
-                    {selectedTutor?.id === tutor.id && (
+                    {selectedTutor?.id === tutor.id && !showAllTutors && (
                       <div className="text-xs font-medium px-2 py-1 bg-primary text-primary-foreground rounded">
                         Selected
                       </div>
@@ -1063,12 +1388,12 @@ function Sessions({ userData }) {
           </Card>
         )}
 
-        {selectedTutor && (
+        {(selectedTutor || showAllTutors) && (
           <>
             <div className="mb-6 flex items-center gap-4">
               <Calendar className="w-5 h-5 text-foreground" />
               <span className="text-lg font-medium text-foreground">
-                {monthYear} - {selectedTutor.user?.name}
+                {monthYear} - {showAllTutors ? 'All Tutors' : selectedTutor?.user?.name}
               </span>
               <div className="flex gap-2 ml-auto">
                 <Button
@@ -1167,7 +1492,11 @@ function Sessions({ userData }) {
                                         ) : (
                                           <MapPin className="w-2 h-2 flex-shrink-0" />
                                         )}
-                                        <span className="truncate">{slot.time}</span>
+                                        <span className="truncate" title={showAllTutors && slot.tutorName ? slot.tutorName : undefined}>
+                                          {showAllTutors && slot.tutorName 
+                                            ? `${slot.tutorName.split(' ')[0]} ${slot.time}`
+                                            : slot.time}
+                                        </span>
                                       </div>
                                     )
                                   })
@@ -1266,7 +1595,11 @@ function Sessions({ userData }) {
                                     <MapPin className="w-2.5 h-2.5 flex-shrink-0" />
                                   )}
                                   <div className="flex-1 min-w-0">
-                                    <div className="font-medium truncate text-[10px]">{slot.time}</div>
+                                    <div className="font-medium truncate text-[10px]">
+                                      {showAllTutors && slot.tutorName 
+                                        ? `${slot.tutorName.split(' ')[0]} ${slot.time}`
+                                        : slot.time}
+                                    </div>
                                     <div className="text-[9px] opacity-75">
                                       {isBookedByMe ? 'Booked by you' : slot.session && slot.session.status === 'booked' ? 'Booked' : 'Available'}
                                     </div>
@@ -1315,7 +1648,7 @@ function Sessions({ userData }) {
         <Dialog open={isDaySlotsModalOpen} onOpenChange={setIsDaySlotsModalOpen}>
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
-              <DialogTitle>All availability for {selectedTutor?.user?.name}</DialogTitle>
+              <DialogTitle>All availability for {showAllTutors ? 'All Tutors' : selectedTutor?.user?.name}</DialogTitle>
               <DialogDescription>
                 {daySlotsModalDateLabel || 'Select a date to view all slots'}
               </DialogDescription>
@@ -1375,7 +1708,11 @@ function Sessions({ userData }) {
                         <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
                       )}
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate text-sm">{slot.time}</div>
+                        <div className="font-medium truncate text-sm">
+                          {showAllTutors && slot.tutorName 
+                            ? `${slot.tutorName} - ${slot.time}`
+                            : slot.time}
+                        </div>
                         <div className="text-xs opacity-75">
                           {isBookedByMe ? 'Booked by you' : slot.session && slot.session.status === 'booked' ? 'Booked' : slot.isAvailable ? 'Available' : 'Unavailable'}
                         </div>
@@ -1402,72 +1739,37 @@ function Sessions({ userData }) {
             <DialogHeader>
               <DialogTitle>Book Session</DialogTitle>
               <DialogDescription>
-                Confirm your session booking with {selectedTutor?.user?.name}
+                Confirm your session booking with {selectedSlot?.tutorName || selectedTutor?.user?.name}
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={(e) => {
-              e.preventDefault()
-              const formData = new FormData(e.target)
-              confirmBooking(formData.get('course'))
-            }}>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label>Date & Time</Label>
-                  <div className="text-sm text-muted-foreground">
-                    {selectedSlot?.date && formatDateKey(selectedSlot.date)} at {selectedSlot?.time}
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="course">Course (Optional)</Label>
-                  <Select
-                    onValueChange={(value) => {
-                      const form = document.querySelector('form')
-                      if (form) {
-                        let hiddenInput = form.querySelector('input[name="course"]')
-                        if (!hiddenInput) {
-                          hiddenInput = document.createElement('input')
-                          hiddenInput.type = 'hidden'
-                          hiddenInput.name = 'course'
-                          form.appendChild(hiddenInput)
-                        }
-                        hiddenInput.value = value
-                      }
-                    }}
-                  >
-                    <SelectTrigger id="course">
-                      <SelectValue placeholder="Select a course (optional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CN115">CN115</SelectItem>
-                      <SelectItem value="CN125">CN125</SelectItem>
-                      <SelectItem value="CN126">CN126</SelectItem>
-                      <SelectItem value="CN127">CN127</SelectItem>
-                      <SelectItem value="CN128">CN128</SelectItem>
-                      <SelectItem value="CN135">CN135</SelectItem>
-                      <SelectItem value="CN235">CN235</SelectItem>
-                      <SelectItem value="CN321">CN321</SelectItem>
-                      <SelectItem value="CN322">CN322</SelectItem>
-                      <SelectItem value="CN335">CN335</SelectItem>
-                      <SelectItem value="CN434">CN434</SelectItem>
-                      <SelectItem value="CN455">CN455</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <input type="hidden" name="course" value="" />
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Date & Time</Label>
+                <div className="text-sm text-muted-foreground">
+                  {selectedSlot?.date && formatDateKey(selectedSlot.date)} at {selectedSlot?.time}
                 </div>
               </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsBookingModalOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit">
-                  Confirm Booking
-                </Button>
-              </DialogFooter>
-            </form>
+              {userData?.class_name && (
+                <div className="grid gap-2">
+                  <Label>Class</Label>
+                  <div className="text-sm text-muted-foreground">
+                    {userData.class_name}
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsBookingModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button onClick={confirmBooking}>
+                Confirm Booking
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -1588,6 +1890,7 @@ function Sessions({ userData }) {
                               return (
                                 <div
                                   key={slot.id}
+                                  onClick={() => !isPastSlot && slot.availability && handleSlotClick(slot, day)}
                                   className={cn(
                                     "p-1 rounded text-[9px] flex items-center gap-1",
                                     isPastSlot
@@ -1595,8 +1898,8 @@ function Sessions({ userData }) {
                                       : slot.session && slot.session.status === 'booked'
                                       ? "bg-gray-100 text-gray-800 border border-gray-200"
                                       : slot.session
-                                      ? "bg-blue-100 text-blue-800 border border-blue-200"
-                                      : "bg-blue-100 text-blue-800 border border-blue-200"
+                                      ? "bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer hover:bg-blue-200"
+                                      : "bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer hover:bg-blue-200"
                                   )}
                                 >
                                   {slot.type === 'online' ? (
@@ -1676,6 +1979,7 @@ function Sessions({ userData }) {
                         return (
                           <div
                             key={slot.id}
+                            onClick={() => !isPastSlot && slot.availability && handleSlotClick(slot, day)}
                             className={cn(
                               "p-1.5 rounded text-[10px] flex items-center gap-1.5",
                               isPastSlot
@@ -1683,8 +1987,8 @@ function Sessions({ userData }) {
                                 : slot.session && slot.session.status === 'booked'
                                 ? "bg-gray-200 text-gray-800 border border-gray-300"
                                 : slot.session
-                                ? "bg-blue-100 text-blue-800 border border-blue-200"
-                                : "bg-blue-100 text-blue-800 border border-blue-200"
+                                ? "bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer hover:bg-blue-200"
+                                : "bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer hover:bg-blue-200"
                             )}
                           >
                             {slot.type === 'online' ? (
@@ -1801,6 +2105,200 @@ function Sessions({ userData }) {
           </table>
         </div>
       </Card>
+
+      <Dialog open={isSlotOptionsDialogOpen} onOpenChange={setIsSlotOptionsDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Manage Availability</DialogTitle>
+            <DialogDescription>
+              Choose an action for this availability slot
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-3 py-4">
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-4"
+              onClick={handleEditClick}
+            >
+              <Edit className="w-5 h-5 mr-3" />
+              <div className="text-left">
+                <div className="font-medium">Edit</div>
+                <div className="text-xs text-muted-foreground">Modify time or session type</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-4 text-destructive hover:text-destructive"
+              onClick={handleDeleteClick}
+            >
+              <Trash2 className="w-5 h-5 mr-3" />
+              <div className="text-left">
+                <div className="font-medium">Delete</div>
+                <div className="text-xs text-muted-foreground">Remove this availability</div>
+              </div>
+            </Button>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsSlotOptionsDialogOpen(false)
+                setSelectedAvailability(null)
+                setSelectedSlotDate(null)
+              }}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Edit Availability</DialogTitle>
+            <DialogDescription>
+              {selectedAvailability?.is_recurring 
+                ? 'Choose whether to edit this occurrence or all recurring occurrences'
+                : 'Edit this availability slot'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedAvailability && (
+            <div className="space-y-4 py-4">
+              {!editScope && selectedAvailability.is_recurring ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    This is a recurring availability. How would you like to edit it?
+                  </p>
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => handleScopeSelection('this')}
+                    >
+                      <Calendar className="w-4 h-4 mr-2" />
+                      This occurrence only
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => handleScopeSelection('all')}
+                    >
+                      <Calendar className="w-4 h-4 mr-2" />
+                      All occurrences
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-start-time">Start Time</Label>
+                    <Input
+                      id="edit-start-time"
+                      type="time"
+                      value={editFormData.startTime}
+                      onChange={(e) => handleStartTimeChange(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-end-time">End Time</Label>
+                    <Input
+                      id="edit-end-time"
+                      type="time"
+                      value={editFormData.endTime}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, endTime: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-session-type">Session Type</Label>
+                    <Select value={editFormData.sessionType} onValueChange={(value) => setEditFormData(prev => ({ ...prev, sessionType: value }))}>
+                      <SelectTrigger id="edit-session-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="online">Online</SelectItem>
+                        <SelectItem value="in-person">In-Person</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsEditDialogOpen(false)
+                setSelectedAvailability(null)
+                setSelectedSlotDate(null)
+                setEditScope(null)
+              }}
+              disabled={isSaving}
+            >
+              Cancel
+            </Button>
+            {(editScope || !selectedAvailability?.is_recurring) && (
+              <Button type="button" onClick={handleEditConfirm} disabled={isSaving}>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Delete Availability</DialogTitle>
+            <DialogDescription>
+              {selectedAvailability?.is_recurring 
+                ? 'This will delete the recurring availability'
+                : 'This will delete this availability slot'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete this availability? This action cannot be undone.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false)
+                setSelectedAvailability(null)
+                setSelectedSlotDate(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="button" 
+              variant="destructive"
+              onClick={() => handleDeleteConfirm()}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Availability Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>

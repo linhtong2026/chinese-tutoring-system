@@ -1,5 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timedelta
+import uuid
 
 db = SQLAlchemy()
 
@@ -178,3 +179,35 @@ class Feedback(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
+
+class Invitation(db.Model):
+    __tablename__ = 'invitations'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(100), nullable=False)
+    role = db.Column(db.String(20), nullable=False)
+    token = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    invited_by = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(days=7))
+    
+    inviter = db.relationship('User', backref='invitations_sent', foreign_keys=[invited_by])
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'role': self.role,
+            'token': self.token,
+            'invited_by': self.invited_by,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None
+        }
+    
+    def is_expired(self):
+        return datetime.utcnow() > self.expires_at
+    
+    def is_valid(self):
+        return self.status == 'pending' and not self.is_expired()

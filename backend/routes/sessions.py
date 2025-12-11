@@ -25,7 +25,7 @@ def book_session():
     availability_id = data.get("availability_id")
     start_time_str = data.get("start_time")
     end_time_str = data.get("end_time")
-    course = data.get("course")
+    course = current_user.class_name
 
     if not availability_id or not start_time_str or not end_time_str:
         return (
@@ -211,6 +211,25 @@ def get_sessions():
     sessions = query.all()
 
     return jsonify({"success": True, "sessions": [s.to_dict() for s in sessions]})
+
+
+@session_bp.route("/api/sessions/all", methods=["GET"])
+@require_auth
+def get_all_sessions():
+    sessions = Session.query.options(
+        joinedload(Session.student_user),
+        joinedload(Session.tutor_user)
+    ).all()
+    
+    result = []
+    for s in sessions:
+        s_dict = s.to_dict()
+        if s.tutor_user:
+            s_dict['tutor_name'] = s.tutor_user.name
+            s_dict['tutor_email'] = s.tutor_user.email
+        result.append(s_dict)
+    
+    return jsonify({"success": True, "sessions": result})
 
 
 @session_bp.route("/api/sessions/<int:session_id>", methods=["GET"])
