@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 from models import db, Session, User, Availability, Tutor, SessionNote, Feedback
 from auth import require_auth
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.orm import joinedload, subqueryload
 from services.email_service import (
     send_booking_confirmation,
