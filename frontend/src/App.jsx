@@ -1,4 +1,4 @@
-import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useUser, useAuth } from '@clerk/clerk-react'
+import { SignedIn, SignedOut, UserButton, useUser, useAuth } from '@clerk/clerk-react'
 import { useState, useEffect } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import OnboardingForm from './components/OnboardingForm'
@@ -9,6 +9,7 @@ import StudentSessionHistory from './components/StudentSessionHistory'
 import Dashboard from './components/Dashboard'
 import FeedbackPage from './components/FeedbackPage'
 import UserManagement from './components/UserManagement'
+import LandingPage from './components/LandingPage'
 import api from './services/api'
 
 function App() {
@@ -90,13 +91,7 @@ function App() {
   const mainAppContent = (
     <div className="app">
       <SignedOut>
-        <div className="auth-container">
-          <h1>Chinese Tutoring System</h1>
-          <div className="auth-buttons">
-            <SignInButton mode="modal" />
-            <SignUpButton mode="modal" />
-          </div>
-        </div>
+        <LandingPage />
       </SignedOut>
       
       <SignedIn>
