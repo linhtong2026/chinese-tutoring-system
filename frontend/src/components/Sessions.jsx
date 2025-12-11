@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useAuth } from '@clerk/clerk-react'
-import { Calendar, ChevronLeft, ChevronRight, Monitor, MapPin, Plus, CalendarIcon, Star, Edit, Trash2 } from 'lucide-react'
+import { Calendar, ChevronLeft, ChevronRight, Monitor, MapPin, Plus, CalendarIcon, Star, Edit, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
@@ -53,6 +53,7 @@ function Sessions({ userData }) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isSlotOptionsDialogOpen, setIsSlotOptionsDialogOpen] = useState(false)
   const [selectedAvailability, setSelectedAvailability] = useState(null)
+  const [selectedSlotDate, setSelectedSlotDate] = useState(null)
   const [editScope, setEditScope] = useState(null)
   const [editFormData, setEditFormData] = useState({
     startTime: '',
@@ -60,6 +61,7 @@ function Sessions({ userData }) {
     sessionType: 'online'
   })
   const [originalDuration, setOriginalDuration] = useState(0)
+  const [isSaving, setIsSaving] = useState(false)
 
   const availabilities = useMemo(() => {
     if (userData?.role !== 'student') {
@@ -429,6 +431,18 @@ function Sessions({ userData }) {
     const dayOfWeek = date.getDay()
     const slots = []
     
+    const hasOneTimeAvailabilityForThisDay = availabilities.some(av => {
+      if (!av.is_recurring && av.start_time) {
+        const match = av.start_time.match(/(\d{4})-(\d{2})-(\d{2})/)
+        if (match) {
+          const [, year, month, day] = match.map(Number)
+          const avDateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          return avDateKey === dateKey && dayOfWeek === av.day_of_week
+        }
+      }
+      return false
+    })
+    
     const sessionMap = new Map()
     sessions.forEach(session => {
       if (!session.start_time) return
@@ -482,6 +496,10 @@ function Sessions({ userData }) {
       }
       
       if (appliesToThisDay) {
+        if (av.is_recurring && hasOneTimeAvailabilityForThisDay) {
+          return
+        }
+        
         const baseDate = new Date(date)
         baseDate.setHours(startNYC.hours, startNYC.minutes, 0, 0)
         
@@ -821,9 +839,10 @@ function Sessions({ userData }) {
     setIsNoteModalOpen(true)
   }
 
-  const handleSlotClick = (slot) => {
+  const handleSlotClick = (slot, date) => {
     if (!slot.availability) return
     setSelectedAvailability(slot.availability)
+    setSelectedSlotDate(date)
     setIsSlotOptionsDialogOpen(true)
   }
 
@@ -891,60 +910,102 @@ function Sessions({ userData }) {
   }
 
   const handleEditConfirm = async () => {
-    if (!selectedAvailability || !editScope) return
+    if (!selectedAvailability || !editScope) {
+      console.log('Cannot save: selectedAvailability:', selectedAvailability, 'editScope:', editScope)
+      return
+    }
+
+    console.log('Saving availability edit...', { selectedAvailability, editScope, editFormData })
+    setIsSaving(true)
 
     try {
-      const selectedDate = new Date(selectedAvailability.start_time)
       const [startHours, startMinutes] = editFormData.startTime.split(':').map(Number)
       const [endHours, endMinutes] = editFormData.endTime.split(':').map(Number)
+      
+      console.log('Parsed times:', { startHours, startMinutes, endHours, endMinutes })
 
-      if (editScope === 'all') {
+      if (editScope === 'all' || !selectedAvailability.is_recurring) {
+        console.log('Updating availability (all occurrences or non-recurring)')
+        
+        let startTimeISO, endTimeISO
+        if (!selectedAvailability.is_recurring) {
+          const useDate = selectedSlotDate || new Date()
+          const dateStr = `${useDate.getFullYear()}-${String(useDate.getMonth() + 1).padStart(2, '0')}-${String(useDate.getDate()).padStart(2, '0')}`
+          startTimeISO = `${dateStr}T${String(startHours).padStart(2, '0')}:${String(startMinutes).padStart(2, '0')}:00`
+          endTimeISO = `${dateStr}T${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}:00`
+        } else {
+          startTimeISO = `2000-01-01T${String(startHours).padStart(2, '0')}:${String(startMinutes).padStart(2, '0')}:00`
+          endTimeISO = `2000-01-01T${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}:00`
+        }
+        
         const updateData = {
-          start_time: new Date(Date.UTC(2000, 0, 1, startHours, startMinutes)).toISOString(),
-          end_time: new Date(Date.UTC(2000, 0, 1, endHours, endMinutes)).toISOString(),
+          start_time: startTimeISO,
+          end_time: endTimeISO,
           session_type: editFormData.sessionType
         }
 
+        console.log('Calling updateAvailability API with:', updateData)
         const response = await api.updateAvailability(getToken, selectedAvailability.id, updateData)
+        console.log('API response status:', response.status)
+        
         if (response.ok) {
           const data = await response.json()
+          console.log('Update successful:', data)
           setAllAvailabilities(prev => prev.map(av => av.id === selectedAvailability.id ? data.availability : av))
+          setIsEditDialogOpen(false)
         } else {
           const error = await response.json()
-          alert(`Error updating availability: ${error.error || 'Unknown error'}`)
-          return
+          console.error('API error:', error)
         }
       } else {
-        const specificDate = new Date(selectedDate)
-        specificDate.setUTCHours(startHours, startMinutes, 0, 0)
-        const endDateTime = new Date(selectedDate)
-        endDateTime.setUTCHours(endHours, endMinutes, 0, 0)
+        console.log('Edit scope is THIS - creating new one-time availability')
+        
+        const useDate = selectedSlotDate || new Date()
+        const dateStr = `${useDate.getFullYear()}-${String(useDate.getMonth() + 1).padStart(2, '0')}-${String(useDate.getDate()).padStart(2, '0')}`
+        console.log('Using date:', dateStr, 'from selectedSlotDate:', selectedSlotDate)
+        
+        const startTimeISO = `${dateStr}T${String(startHours).padStart(2, '0')}:${String(startMinutes).padStart(2, '0')}:00`
+        const endTimeISO = `${dateStr}T${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}:00`
+        console.log('ISO times:', { startTimeISO, endTimeISO })
+        
+        const dayOfWeekMatch = selectedAvailability.start_time.match(/(\d{4})-(\d{2})-(\d{2})/)
+        let dayOfWeek = 0
+        if (dayOfWeekMatch) {
+          const tempDate = new Date(`${dayOfWeekMatch[1]}-${dayOfWeekMatch[2]}-${dayOfWeekMatch[3]}`)
+          dayOfWeek = tempDate.getDay()
+        }
+        console.log('Day of week:', dayOfWeek)
 
         const newAvailabilityData = {
-          day_of_week: specificDate.getDay(),
-          start_time: specificDate.toISOString(),
-          end_time: endDateTime.toISOString(),
+          day_of_week: dayOfWeek,
+          start_time: startTimeISO,
+          end_time: endTimeISO,
           session_type: editFormData.sessionType,
           is_recurring: false
         }
+        console.log('Calling createAvailability API with:', newAvailabilityData)
 
         const response = await api.createAvailability(getToken, newAvailabilityData)
+        console.log('API response status:', response.status)
+        
         if (response.ok) {
           const data = await response.json()
+          console.log('Create successful:', data)
           setAllAvailabilities(prev => [...prev, data.availability])
+          setIsEditDialogOpen(false)
         } else {
           const error = await response.json()
-          alert(`Error creating new availability: ${error.error || 'Unknown error'}`)
-          return
+          console.error('API error:', error)
         }
       }
 
-      setIsEditDialogOpen(false)
       setSelectedAvailability(null)
+      setSelectedSlotDate(null)
       setEditScope(null)
     } catch (error) {
       console.error('Error updating availability:', error)
-      alert('Failed to update availability')
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -957,6 +1018,7 @@ function Sessions({ userData }) {
         setAllAvailabilities(prev => prev.filter(av => av.id !== selectedAvailability.id))
         setIsDeleteDialogOpen(false)
         setSelectedAvailability(null)
+        setSelectedSlotDate(null)
       } else {
         const error = await response.json()
         alert(`Error deleting availability: ${error.error || 'Unknown error'}`)
@@ -1864,7 +1926,7 @@ function Sessions({ userData }) {
                               return (
                                 <div
                                   key={slot.id}
-                                  onClick={() => !isPastSlot && slot.availability && handleSlotClick(slot)}
+                                  onClick={() => !isPastSlot && slot.availability && handleSlotClick(slot, day)}
                                   className={cn(
                                     "p-1 rounded text-[9px] flex items-center gap-1",
                                     isPastSlot
@@ -1953,7 +2015,7 @@ function Sessions({ userData }) {
                         return (
                           <div
                             key={slot.id}
-                            onClick={() => !isPastSlot && slot.availability && handleSlotClick(slot)}
+                            onClick={() => !isPastSlot && slot.availability && handleSlotClick(slot, day)}
                             className={cn(
                               "p-1.5 rounded text-[10px] flex items-center gap-1.5",
                               isPastSlot
@@ -2121,6 +2183,7 @@ function Sessions({ userData }) {
               onClick={() => {
                 setIsSlotOptionsDialogOpen(false)
                 setSelectedAvailability(null)
+                setSelectedSlotDate(null)
               }}
             >
               Cancel
@@ -2210,14 +2273,23 @@ function Sessions({ userData }) {
               onClick={() => {
                 setIsEditDialogOpen(false)
                 setSelectedAvailability(null)
+                setSelectedSlotDate(null)
                 setEditScope(null)
               }}
+              disabled={isSaving}
             >
               Cancel
             </Button>
             {(editScope || !selectedAvailability?.is_recurring) && (
-              <Button type="button" onClick={handleEditConfirm}>
-                Save Changes
+              <Button type="button" onClick={handleEditConfirm} disabled={isSaving}>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
               </Button>
             )}
           </DialogFooter>
@@ -2248,6 +2320,7 @@ function Sessions({ userData }) {
               onClick={() => {
                 setIsDeleteDialogOpen(false)
                 setSelectedAvailability(null)
+                setSelectedSlotDate(null)
               }}
             >
               Cancel
