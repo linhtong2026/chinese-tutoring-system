@@ -200,3 +200,49 @@ def send_feedback_request(student_email, student_name, tutor_name, session_data)
     except Exception as e:
         print(f"Error sending feedback request: {e}")
         return False
+
+def send_invitation_email(email, role, token, invited_by_name):
+    api_key = current_app.config.get('RESEND_API_KEY')
+    from_email = current_app.config.get('RESEND_FROM_EMAIL')
+    frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:5173')
+    
+    if not api_key:
+        print("Resend API key not configured, skipping email")
+        return False
+    
+    resend.api_key = api_key
+    
+    signup_url = f"{frontend_url}?invitation={token}"
+    role_display = "Professor" if role == "professor" else "Tutor"
+    
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2563eb;">You're Invited to Join the Chinese Tutoring System!</h2>
+        <p>Hi,</p>
+        <p>{invited_by_name} has invited you to join as a <strong>{role_display}</strong>.</p>
+        <p>Click the button below to sign up and get started:</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{signup_url}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                Accept Invitation
+            </a>
+        </div>
+        <p style="color: #6b7280; font-size: 14px;">Or copy this link: {signup_url}</p>
+        <p style="color: #6b7280; font-size: 12px; margin-top: 30px;">This invitation will expire in 7 days.</p>
+        <p>Best regards,<br>Chinese Tutoring System</p>
+    </div>
+    """
+    
+    try:
+        params = {
+            "from": from_email,
+            "to": [email],
+            "subject": f'Invitation to Join as {role_display}',
+            "html": html_content
+        }
+        
+        response = resend.Emails.send(params)
+        print(f"Invitation sent to {email}, id: {response.get('id')}")
+        return True
+    except Exception as e:
+        print(f"Error sending invitation: {e}")
+        return False

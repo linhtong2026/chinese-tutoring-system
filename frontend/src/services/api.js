@@ -240,6 +240,35 @@ class ApiService {
     })
     return response
   }
+
+  async sendInvitation(getToken, email, role) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/invitations`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email, role })
+    })
+    return response
+  }
+
+  async getInvitations(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/invitations`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async checkInvitation(token) {
+    const response = await fetch(`${API_URL}/api/invitations/check/${token}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+    return response
+  }
 }
 
 export default new ApiService()

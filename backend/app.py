@@ -9,11 +9,13 @@ from models import (
     Feedback,
     Availability,
     SessionNote,
+    Invitation,
 )
 from auth import require_auth
 from routes.availability import availability_bp
 from routes.sessions import session_bp
 from routes.matching import matching_bp
+from routes.invitations import invitations_bp
 import requests
 import os
 from datetime import datetime
@@ -41,6 +43,7 @@ init_db()
 app.register_blueprint(availability_bp)
 app.register_blueprint(session_bp)
 app.register_blueprint(matching_bp)
+app.register_blueprint(invitations_bp)
 
 
 def update_clerk_metadata(clerk_user_id, metadata):
@@ -195,18 +198,40 @@ def complete_onboarding():
 
     language = data.get("language", "en")
     class_name = data.get("class_name")
+    invitation_token = data.get("invitation_token")
 
     if clerk_name:
         db_user.name = clerk_name
     if clerk_email:
         db_user.email = clerk_email
-    db_user.role = "student"
+    
+    role = "student"
+    
+    if invitation_token:
+        invitation = Invitation.query.filter_by(token=invitation_token).first()
+        if invitation and invitation.is_valid():
+            user_email = (db_user.email or "").strip().lower()
+            invitation_email = (invitation.email or "").strip().lower()
+            
+            if user_email and invitation_email and user_email == invitation_email:
+                role = invitation.role
+                invitation.status = 'accepted'
+                db.session.add(invitation)
+    
+    db_user.role = role
     db_user.class_name = class_name
     db_user.language_preference = language
     db_user.onboarding_complete = True
+    
+    if role == "tutor":
+        tutor = Tutor.query.filter_by(user_id=db_user.id).first()
+        if not tutor:
+            tutor = Tutor(user_id=db_user.id)
+            db.session.add(tutor)
+    
     db.session.commit()
 
-    update_clerk_metadata(clerk_user_id, {"role": "student"})
+    update_clerk_metadata(clerk_user_id, {"role": role})
 
     return jsonify({"success": True, "user": db_user.to_dict()})
 
