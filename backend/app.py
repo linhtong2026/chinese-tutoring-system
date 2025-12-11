@@ -13,6 +13,7 @@ from models import (
 from auth import require_auth
 from routes.availability import availability_bp
 from routes.sessions import session_bp
+from routes.matching import matching_bp
 import requests
 import os
 from datetime import datetime
@@ -39,6 +40,7 @@ init_db()
 
 app.register_blueprint(availability_bp)
 app.register_blueprint(session_bp)
+app.register_blueprint(matching_bp)
 
 
 def update_clerk_metadata(clerk_user_id, metadata):
