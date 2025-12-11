@@ -197,6 +197,25 @@ def get_sessions():
     return jsonify({"success": True, "sessions": [s.to_dict() for s in sessions]})
 
 
+@session_bp.route("/api/sessions/all", methods=["GET"])
+@require_auth
+def get_all_sessions():
+    sessions = Session.query.options(
+        joinedload(Session.student_user),
+        joinedload(Session.tutor_user)
+    ).all()
+    
+    result = []
+    for s in sessions:
+        s_dict = s.to_dict()
+        if s.tutor_user:
+            s_dict['tutor_name'] = s.tutor_user.name
+            s_dict['tutor_email'] = s.tutor_user.email
+        result.append(s_dict)
+    
+    return jsonify({"success": True, "sessions": result})
+
+
 @session_bp.route("/api/sessions/<int:session_id>", methods=["GET"])
 @require_auth
 def get_session(session_id):

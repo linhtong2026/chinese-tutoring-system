@@ -23,8 +23,8 @@ function Sessions({ userData }) {
   const { getToken } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [sessions, setSessions] = useState([])
-  const [availabilities, setAvailabilities] = useState([])
+  const [allSessions, setAllSessions] = useState([])
+  const [allAvailabilities, setAllAvailabilities] = useState([])
   const [tutorId, setTutorId] = useState(null)
   const [formData, setFormData] = useState({
     date: '',
@@ -36,6 +36,7 @@ function Sessions({ userData }) {
   })
   const [tutors, setTutors] = useState([])
   const [selectedTutor, setSelectedTutor] = useState(null)
+  const [showAllTutors, setShowAllTutors] = useState(false)
   const [recommendedTutorId, setRecommendedTutorId] = useState(null)
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState(null)
@@ -48,6 +49,32 @@ function Sessions({ userData }) {
   const [professorFilterTutor, setProfessorFilterTutor] = useState(null)
   const [professorFilterStudent, setProfessorFilterStudent] = useState(null)
   const [professorFilteredSessions, setProfessorFilteredSessions] = useState([])
+
+  const availabilities = useMemo(() => {
+    if (userData?.role !== 'student') {
+      return allAvailabilities
+    }
+    if (showAllTutors) {
+      return allAvailabilities
+    }
+    if (selectedTutor?.id) {
+      return allAvailabilities.filter(av => av.tutor_id === selectedTutor.id)
+    }
+    return []
+  }, [allAvailabilities, showAllTutors, selectedTutor?.id, userData?.role])
+
+  const sessions = useMemo(() => {
+    if (userData?.role !== 'student') {
+      return allSessions
+    }
+    if (showAllTutors) {
+      return allSessions
+    }
+    if (selectedTutor?.user_id) {
+      return allSessions.filter(s => s.tutor_id === selectedTutor.user_id)
+    }
+    return []
+  }, [allSessions, showAllTutors, selectedTutor?.user_id, userData?.role])
 
   const getWeekStart = (date) => {
     const d = new Date(date)
@@ -77,7 +104,7 @@ function Sessions({ userData }) {
           const response = await api.getProfessorSessions(getToken)
           if (response.ok) {
             const data = await response.json()
-            setSessions(data.sessions || [])
+            setAllSessions(data.sessions || [])
           }
         } else if (userData.role === 'tutor') {
           const tutorResponse = await api.getTutorByUser(getToken, userData.id)
@@ -93,12 +120,12 @@ function Sessions({ userData }) {
             
             if (sessionsResponse.ok) {
               const sessionsData = await sessionsResponse.json()
-              setSessions(sessionsData.sessions || [])
+              setAllSessions(sessionsData.sessions || [])
             }
             
             if (availabilityResponse.ok) {
               const availabilityData = await availabilityResponse.json()
-              setAvailabilities(availabilityData.availabilities || [])
+              setAllAvailabilities(availabilityData.availabilities || [])
             }
           } else {
             const errorData = await tutorResponse.json()
@@ -150,7 +177,7 @@ function Sessions({ userData }) {
           
           if (sessionsResponse.ok) {
             const sessionsData = await sessionsResponse.json()
-            setSessions(sessionsData.sessions || [])
+            setAllSessions(sessionsData.sessions || [])
           }
         }
       } catch (error) {
@@ -188,48 +215,45 @@ function Sessions({ userData }) {
   }, [sessions, professorFilterCourse, professorFilterTutor, professorFilterStudent, userData?.role])
   
   useEffect(() => {
-    const fetchTutorAvailability = async () => {
-      if (userData?.role === 'student' && selectedTutor?.id) {
+    const fetchAllData = async () => {
+      if (userData?.role === 'student') {
         try {
-          const [availabilityResponse, tutorSessionsResponse] = await Promise.all([
-            api.getAvailability(getToken, selectedTutor.id),
-            api.getSessions(getToken, selectedTutor.user_id)
+          const [availabilityResponse, sessionsResponse] = await Promise.all([
+            api.getAllAvailability(getToken),
+            api.getAllSessions(getToken)
           ])
           
           if (availabilityResponse.ok) {
             const availabilityData = await availabilityResponse.json()
-            setAvailabilities(availabilityData.availabilities || [])
+            setAllAvailabilities((availabilityData.availabilities || []).map(av => ({
+              ...av,
+              tutorId: av.tutor_id,
+              tutorName: av.tutor_name || 'Unknown',
+              tutorUserId: av.tutor_user_id
+            })))
           }
           
-          if (tutorSessionsResponse.ok) {
-            const tutorSessionsData = await tutorSessionsResponse.json()
-            setSessions(prevSessions => {
-              const allSessions = [...prevSessions]
-              const tutorSessions = tutorSessionsData.sessions || []
-              
-              tutorSessions.forEach(ts => {
-                if (!allSessions.find(s => s.id === ts.id)) {
-                  allSessions.push(ts)
-                }
-              })
-              
-              return allSessions
-            })
+          if (sessionsResponse.ok) {
+            const sessionsData = await sessionsResponse.json()
+            setAllSessions((sessionsData.sessions || []).map(s => ({
+              ...s,
+              tutorName: s.tutor_name || 'Unknown'
+            })))
           }
         } catch (error) {
-          console.error('Error fetching tutor availability:', error)
+          console.error('Error fetching data:', error)
         }
       }
     }
     
-    fetchTutorAvailability()
+    fetchAllData()
     
     const intervalId = setInterval(() => {
-      fetchTutorAvailability()
+      fetchAllData()
     }, 10000)
     
     return () => clearInterval(intervalId)
-  }, [selectedTutor?.id, selectedTutor?.user_id, userData?.role, getToken])
+  }, [userData?.role, getToken])
 
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   const daySlotsModalDateLabel = daySlotsModalData.date
@@ -487,6 +511,9 @@ function Sessions({ userData }) {
             isAvailable: !sessionInSlot,
             availability: av,
             slotIndex: slotIndex,
+            tutorId: av.tutorId,
+            tutorName: av.tutorName,
+            tutorUserId: av.tutorUserId,
             session: sessionInSlot ? {
               id: sessionInSlot.id,
               status: sessionInSlot.status === 'booked' ? 'booked' : 'available',
@@ -540,7 +567,9 @@ function Sessions({ userData }) {
     const slotMap = new Map()
     
     for (const slot of slots) {
-      const slotKey = slot.timeSort.toString()
+      const slotKey = showAllTutors 
+        ? `${slot.tutorId || 'default'}-${slot.timeSort}` 
+        : slot.timeSort.toString()
       
       if (slotMap.has(slotKey)) {
         const existingSlot = slotMap.get(slotKey)
@@ -659,7 +688,7 @@ function Sessions({ userData }) {
       if (response.ok) {
         const data = await response.json()
         console.log('Availability created:', data)
-        setAvailabilities([...availabilities, data.availability])
+        setAllAvailabilities([...allAvailabilities, data.availability])
         setIsModalOpen(false)
         setFormData({
           date: '',
@@ -697,7 +726,13 @@ function Sessions({ userData }) {
   }
   
   const confirmBooking = async (course) => {
-    if (!selectedSlot || !selectedTutor) return
+    if (!selectedSlot) return
+    
+    const slotTutor = showAllTutors 
+      ? tutors.find(t => t.id === selectedSlot.tutorId)
+      : selectedTutor
+    
+    if (!slotTutor && !showAllTutors) return
     
     try {
       const av = selectedSlot.availability
@@ -738,19 +773,27 @@ function Sessions({ userData }) {
         setIsBookingModalOpen(false)
         setSelectedSlot(null)
         
-        const [availabilityResponse, tutorSessionsResponse] = await Promise.all([
-          api.getAvailability(getToken, selectedTutor.id),
-          api.getSessions(getToken, selectedTutor.user_id)
+        const [availabilityResponse, sessionsResponse] = await Promise.all([
+          api.getAllAvailability(getToken),
+          api.getAllSessions(getToken)
         ])
         
         if (availabilityResponse.ok) {
           const availabilityData = await availabilityResponse.json()
-          setAvailabilities(availabilityData.availabilities || [])
+          setAllAvailabilities((availabilityData.availabilities || []).map(av => ({
+            ...av,
+            tutorId: av.tutor_id,
+            tutorName: av.tutor_name || 'Unknown',
+            tutorUserId: av.tutor_user_id
+          })))
         }
         
-        if (tutorSessionsResponse.ok) {
-          const tutorSessionsData = await tutorSessionsResponse.json()
-          setSessions(tutorSessionsData.sessions || [])
+        if (sessionsResponse.ok) {
+          const sessionsData = await sessionsResponse.json()
+          setAllSessions((sessionsData.sessions || []).map(s => ({
+            ...s,
+            tutorName: s.tutor_name || 'Unknown'
+          })))
         }
       } else {
         const errorData = await response.json()
@@ -1036,6 +1079,36 @@ function Sessions({ userData }) {
             <h2 className="text-lg font-semibold text-foreground mb-4">Select Tutor</h2>
             <p className="text-sm text-muted-foreground mb-4">Choose a tutor to view their availability</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div
+                onClick={() => {
+                  setShowAllTutors(true)
+                  setSelectedTutor(null)
+                }}
+                className={cn(
+                  "p-4 border rounded-lg cursor-pointer transition-all relative",
+                  showAllTutors
+                    ? "border-primary bg-primary/5 ring-2 ring-primary"
+                    : "border-border hover:border-primary/50"
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/40 flex items-center justify-center">
+                    <span className="text-lg font-semibold text-primary">★</span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-medium text-foreground">All Tutors</div>
+                    <div className="text-sm text-muted-foreground">View all availability</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-muted-foreground">{tutors.length} tutors</span>
+                    </div>
+                  </div>
+                  {showAllTutors && (
+                    <div className="text-xs font-medium px-2 py-1 bg-primary text-primary-foreground rounded">
+                      Selected
+                    </div>
+                  )}
+                </div>
+              </div>
               {tutors.map((tutor) => {
                 const tutorName = tutor.user?.name?.trim();
                 const tutorEmail = tutor.user?.email;
@@ -1046,11 +1119,14 @@ function Sessions({ userData }) {
                 return (
                 <div
                   key={tutor.id}
-                  onClick={() => setSelectedTutor(tutor)}
+                  onClick={() => {
+                    setSelectedTutor(tutor)
+                    setShowAllTutors(false)
+                  }}
                   className={cn(
                     "p-4 border rounded-lg cursor-pointer transition-all relative",
                     isRecommended && "ring-2 ring-yellow-400",
-                    selectedTutor?.id === tutor.id
+                    selectedTutor?.id === tutor.id && !showAllTutors
                       ? "border-primary bg-primary/5"
                       : "border-border hover:border-primary/50"
                   )}
@@ -1081,7 +1157,7 @@ function Sessions({ userData }) {
                         )}
                       </div>
                     </div>
-                    {selectedTutor?.id === tutor.id && (
+                    {selectedTutor?.id === tutor.id && !showAllTutors && (
                       <div className="text-xs font-medium px-2 py-1 bg-primary text-primary-foreground rounded">
                         Selected
                       </div>
@@ -1094,12 +1170,12 @@ function Sessions({ userData }) {
           </Card>
         )}
 
-        {selectedTutor && (
+        {(selectedTutor || showAllTutors) && (
           <>
             <div className="mb-6 flex items-center gap-4">
               <Calendar className="w-5 h-5 text-foreground" />
               <span className="text-lg font-medium text-foreground">
-                {monthYear} - {selectedTutor.user?.name}
+                {monthYear} - {showAllTutors ? 'All Tutors' : selectedTutor?.user?.name}
               </span>
               <div className="flex gap-2 ml-auto">
                 <Button
@@ -1198,7 +1274,11 @@ function Sessions({ userData }) {
                                         ) : (
                                           <MapPin className="w-2 h-2 flex-shrink-0" />
                                         )}
-                                        <span className="truncate">{slot.time}</span>
+                                        <span className="truncate" title={showAllTutors && slot.tutorName ? slot.tutorName : undefined}>
+                                          {showAllTutors && slot.tutorName 
+                                            ? `${slot.tutorName.split(' ')[0]} ${slot.time}`
+                                            : slot.time}
+                                        </span>
                                       </div>
                                     )
                                   })
@@ -1297,7 +1377,11 @@ function Sessions({ userData }) {
                                     <MapPin className="w-2.5 h-2.5 flex-shrink-0" />
                                   )}
                                   <div className="flex-1 min-w-0">
-                                    <div className="font-medium truncate text-[10px]">{slot.time}</div>
+                                    <div className="font-medium truncate text-[10px]">
+                                      {showAllTutors && slot.tutorName 
+                                        ? `${slot.tutorName.split(' ')[0]} ${slot.time}`
+                                        : slot.time}
+                                    </div>
                                     <div className="text-[9px] opacity-75">
                                       {isBookedByMe ? 'Booked by you' : slot.session && slot.session.status === 'booked' ? 'Booked' : 'Available'}
                                     </div>
@@ -1346,7 +1430,7 @@ function Sessions({ userData }) {
         <Dialog open={isDaySlotsModalOpen} onOpenChange={setIsDaySlotsModalOpen}>
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
-              <DialogTitle>All availability for {selectedTutor?.user?.name}</DialogTitle>
+              <DialogTitle>All availability for {showAllTutors ? 'All Tutors' : selectedTutor?.user?.name}</DialogTitle>
               <DialogDescription>
                 {daySlotsModalDateLabel || 'Select a date to view all slots'}
               </DialogDescription>
@@ -1406,7 +1490,11 @@ function Sessions({ userData }) {
                         <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
                       )}
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate text-sm">{slot.time}</div>
+                        <div className="font-medium truncate text-sm">
+                          {showAllTutors && slot.tutorName 
+                            ? `${slot.tutorName} - ${slot.time}`
+                            : slot.time}
+                        </div>
                         <div className="text-xs opacity-75">
                           {isBookedByMe ? 'Booked by you' : slot.session && slot.session.status === 'booked' ? 'Booked' : slot.isAvailable ? 'Available' : 'Unavailable'}
                         </div>
@@ -1433,7 +1521,7 @@ function Sessions({ userData }) {
             <DialogHeader>
               <DialogTitle>Book Session</DialogTitle>
               <DialogDescription>
-                Confirm your session booking with {selectedTutor?.user?.name}
+                Confirm your session booking with {selectedSlot?.tutorName || selectedTutor?.user?.name}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={(e) => {

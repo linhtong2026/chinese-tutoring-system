@@ -77,6 +77,24 @@ class ApiService {
     return response
   }
 
+  async getAllAvailability(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/availability/all`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
+  async getAllSessions(getToken) {
+    const headers = await this.getAuthHeaders(getToken)
+    const response = await fetch(`${API_URL}/api/sessions/all`, {
+      method: 'GET',
+      headers
+    })
+    return response
+  }
+
   async createAvailability(getToken, data) {
     const headers = await this.getAuthHeaders(getToken)
     const response = await fetch(`${API_URL}/api/availability`, {

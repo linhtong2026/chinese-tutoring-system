@@ -1,7 +1,8 @@
 from flask import Blueprint, jsonify, request
-from models import db, Availability, Tutor
+from models import db, Availability, Tutor, User
 from auth import require_auth
 from datetime import datetime
+from sqlalchemy.orm import joinedload
 
 availability_bp = Blueprint("availability", __name__)
 
@@ -74,6 +75,25 @@ def get_availability():
         availabilities = Availability.query.all()
 
     return jsonify({"success": True, "availabilities": [av.to_dict() for av in availabilities]})
+
+
+@availability_bp.route("/api/availability/all", methods=["GET"])
+@require_auth
+def get_all_availability():
+    availabilities = Availability.query.options(
+        joinedload(Availability.tutor).joinedload(Tutor.user)
+    ).all()
+    
+    result = []
+    for av in availabilities:
+        av_dict = av.to_dict()
+        if av.tutor and av.tutor.user:
+            av_dict['tutor_user_id'] = av.tutor.user_id
+            av_dict['tutor_name'] = av.tutor.user.name
+            av_dict['tutor_email'] = av.tutor.user.email
+        result.append(av_dict)
+    
+    return jsonify({"success": True, "availabilities": result})
 
 
 @availability_bp.route("/api/availability/<int:availability_id>", methods=["PUT"])
