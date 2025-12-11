@@ -36,6 +36,7 @@ function Sessions({ userData }) {
   })
   const [tutors, setTutors] = useState([])
   const [selectedTutor, setSelectedTutor] = useState(null)
+  const [recommendedTutorId, setRecommendedTutorId] = useState(null)
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [viewMode, setViewMode] = useState('month')
@@ -104,14 +105,33 @@ function Sessions({ userData }) {
             console.error('Error fetching tutor:', errorData)
           }
         } else if (userData.role === 'student') {
-          const [tutorsResponse, sessionsResponse] = await Promise.all([
+          const [tutorsResponse, sessionsResponse, recommendResponse] = await Promise.all([
             api.getTutors(getToken),
-            api.getStudentSessions(getToken)
+            api.getStudentSessions(getToken),
+            api.getRecommendedTutors(getToken, { limit: 1 })
           ])
+          
+          let topRecommendedTutorId = null
+          if (recommendResponse.ok) {
+            const recommendData = await recommendResponse.json()
+            if (recommendData.recommendations && recommendData.recommendations.length > 0) {
+              topRecommendedTutorId = recommendData.recommendations[0].tutor_id
+              setRecommendedTutorId(topRecommendedTutorId)
+            }
+          }
           
           if (tutorsResponse.ok) {
             const tutorsData = await tutorsResponse.json()
-            const fetchedTutors = tutorsData.tutors || []
+            let fetchedTutors = tutorsData.tutors || []
+            
+            if (topRecommendedTutorId) {
+              fetchedTutors = fetchedTutors.sort((a, b) => {
+                if (a.user_id === topRecommendedTutorId) return -1
+                if (b.user_id === topRecommendedTutorId) return 1
+                return 0
+              })
+            }
+            
             setTutors(fetchedTutors)
             if (fetchedTutors.length > 0) {
               setSelectedTutor((prevSelected) => {
@@ -1021,20 +1041,31 @@ function Sessions({ userData }) {
                 const tutorEmail = tutor.user?.email;
                 const displayName = (tutorName && tutorName.length > 0) ? tutorName : (tutorEmail || 'Tutor');
                 const displayInitial = (displayName[0] || 'T').toUpperCase();
+                const isRecommended = tutor.user_id === recommendedTutorId;
                 
                 return (
                 <div
                   key={tutor.id}
                   onClick={() => setSelectedTutor(tutor)}
                   className={cn(
-                    "p-4 border rounded-lg cursor-pointer transition-all",
+                    "p-4 border rounded-lg cursor-pointer transition-all relative",
+                    isRecommended && "ring-2 ring-yellow-400",
                     selectedTutor?.id === tutor.id
                       ? "border-primary bg-primary/5"
                       : "border-border hover:border-primary/50"
                   )}
                 >
+                  {isRecommended && (
+                    <div className="absolute -top-2 -right-2 flex items-center gap-1 bg-gradient-to-r from-yellow-400 to-amber-500 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full shadow-sm">
+                      <Star className="w-3 h-3 fill-white" />
+                      <span>Recommended</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                    <div className={cn(
+                      "w-10 h-10 rounded-full flex items-center justify-center",
+                      isRecommended ? "bg-gradient-to-br from-yellow-100 to-amber-200" : "bg-muted"
+                    )}>
                       <span className="text-lg font-semibold">{displayInitial}</span>
                     </div>
                     <div className="flex-1">
