@@ -108,7 +108,7 @@ function Sessions({ userData }) {
           const [tutorsResponse, sessionsResponse, recommendResponse] = await Promise.all([
             api.getTutors(getToken),
             api.getStudentSessions(getToken),
-            api.getRecommendedTutors(getToken, { limit: 1 })
+            api.getRecommendedTutors(getToken)
           ])
           
           let topRecommendedTutorId = null

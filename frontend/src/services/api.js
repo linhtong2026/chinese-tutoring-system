@@ -186,16 +186,9 @@ class ApiService {
     return response
   }
 
-  async getRecommendedTutors(getToken, params = {}) {
+  async getRecommendedTutors(getToken) {
     const headers = await this.getAuthHeaders(getToken)
-    const queryParams = new URLSearchParams()
-    if (params.day !== undefined) queryParams.append('day', params.day)
-    if (params.time) queryParams.append('time', params.time)
-    if (params.session_type) queryParams.append('session_type', params.session_type)
-    if (params.limit) queryParams.append('limit', params.limit)
-    const queryString = queryParams.toString()
-    const url = `${API_URL}/api/matching/recommend${queryString ? `?${queryString}` : ''}`
-    const response = await fetch(url, {
+    const response = await fetch(`${API_URL}/api/matching/recommend`, {
       method: 'GET',
       headers
     })

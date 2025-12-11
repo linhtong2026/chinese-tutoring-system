@@ -1,9 +1,8 @@
 from models import db, User, Tutor, Availability, Session, Feedback
-from datetime import datetime
 from sqlalchemy import func
 
 
-def calculate_tutor_match_scores(student_id, preferred_day=None, preferred_time=None, preferred_session_type=None):
+def calculate_tutor_match_scores(student_id):
     student = User.query.get(student_id)
     if not student:
         return []
@@ -28,20 +27,9 @@ def calculate_tutor_match_scores(student_id, preferred_day=None, preferred_time=
         score += rating_score
         score_breakdown['rating'] = rating_score
         
-        schedule_score = calculate_schedule_score(
-            tutor_profile.id, 
-            preferred_day, 
-            preferred_time
-        )
-        score += schedule_score
-        score_breakdown['schedule_compatibility'] = schedule_score
-        
-        session_type_score = calculate_session_type_score(
-            tutor_profile.id, 
-            preferred_session_type
-        )
-        score += session_type_score
-        score_breakdown['session_type_match'] = session_type_score
+        availability_score = calculate_availability_score(tutor_profile.id)
+        score += availability_score
+        score_breakdown['availability'] = availability_score
         
         tutor_scores.append({
             'tutor_id': tutor.id,
@@ -57,7 +45,7 @@ def calculate_tutor_match_scores(student_id, preferred_day=None, preferred_time=
 
 
 def calculate_previous_session_score(student_id, tutor_id):
-    WEIGHT = 40.0
+    WEIGHT = 50.0
     MAX_SESSIONS_FOR_FULL_SCORE = 5
     
     previous_sessions = Session.query.filter(
@@ -75,7 +63,7 @@ def calculate_previous_session_score(student_id, tutor_id):
 
 
 def calculate_rating_score(tutor_id):
-    WEIGHT = 25.0
+    WEIGHT = 35.0
     
     tutor_sessions = Session.query.filter(Session.tutor_id == tutor_id).all()
     session_ids = [s.id for s in tutor_sessions]
@@ -95,69 +83,20 @@ def calculate_rating_score(tutor_id):
     return WEIGHT * normalized_rating
 
 
-def calculate_schedule_score(tutor_profile_id, preferred_day, preferred_time):
-    WEIGHT = 20.0
-    
-    availabilities = Availability.query.filter_by(tutor_id=tutor_profile_id).all()
-    
-    if not availabilities:
-        return 0.0
-    
-    if preferred_day is None and preferred_time is None:
-        return WEIGHT * 0.5
-    
-    best_match = 0.0
-    
-    for av in availabilities:
-        match = 0.0
-        
-        if preferred_day is not None and av.day_of_week == preferred_day:
-            match += 0.5
-        
-        if preferred_time is not None:
-            try:
-                if isinstance(preferred_time, str):
-                    pref_time = datetime.strptime(preferred_time, "%H:%M").time()
-                else:
-                    pref_time = preferred_time
-                
-                av_start = av.start_time.time()
-                av_end = av.end_time.time()
-                
-                if av_start <= pref_time <= av_end:
-                    match += 0.5
-            except (ValueError, AttributeError):
-                pass
-        
-        best_match = max(best_match, match)
-    
-    return WEIGHT * best_match
-
-
-def calculate_session_type_score(tutor_profile_id, preferred_session_type):
+def calculate_availability_score(tutor_profile_id):
     WEIGHT = 15.0
     
-    if not preferred_session_type:
-        return WEIGHT * 0.5
+    availability_count = Availability.query.filter_by(tutor_id=tutor_profile_id).count()
     
-    matching_availability = Availability.query.filter_by(
-        tutor_id=tutor_profile_id,
-        session_type=preferred_session_type
-    ).first()
+    if availability_count == 0:
+        return 0.0
     
-    if matching_availability:
-        return WEIGHT
+    score_factor = min(availability_count / 5.0, 1.0)
     
-    return 0.0
+    return WEIGHT * score_factor
 
 
-def get_recommended_tutors(student_id, preferred_day=None, preferred_time=None, preferred_session_type=None, limit=5):
-    scores = calculate_tutor_match_scores(
-        student_id,
-        preferred_day,
-        preferred_time,
-        preferred_session_type
-    )
-    
-    return scores[:limit]
+def get_recommended_tutors(student_id):
+    scores = calculate_tutor_match_scores(student_id)
+    return scores
 
