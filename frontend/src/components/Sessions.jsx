@@ -754,7 +754,7 @@ function Sessions({ userData }) {
     setIsDaySlotsModalOpen(true)
   }
   
-  const confirmBooking = async (course) => {
+  const confirmBooking = async () => {
     if (!selectedSlot) return
     
     const slotTutor = showAllTutors 
@@ -792,8 +792,7 @@ function Sessions({ userData }) {
       const bookingData = {
         availability_id: availabilityId,
         start_time: startTimeStr,
-        end_time: endTimeStr,
-        course: course || ''
+        end_time: endTimeStr
       }
       
       const response = await api.bookSession(getToken, bookingData)
@@ -1743,69 +1742,34 @@ function Sessions({ userData }) {
                 Confirm your session booking with {selectedSlot?.tutorName || selectedTutor?.user?.name}
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={(e) => {
-              e.preventDefault()
-              const formData = new FormData(e.target)
-              confirmBooking(formData.get('course'))
-            }}>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label>Date & Time</Label>
-                  <div className="text-sm text-muted-foreground">
-                    {selectedSlot?.date && formatDateKey(selectedSlot.date)} at {selectedSlot?.time}
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="course">Course (Optional)</Label>
-                  <Select
-                    onValueChange={(value) => {
-                      const form = document.querySelector('form')
-                      if (form) {
-                        let hiddenInput = form.querySelector('input[name="course"]')
-                        if (!hiddenInput) {
-                          hiddenInput = document.createElement('input')
-                          hiddenInput.type = 'hidden'
-                          hiddenInput.name = 'course'
-                          form.appendChild(hiddenInput)
-                        }
-                        hiddenInput.value = value
-                      }
-                    }}
-                  >
-                    <SelectTrigger id="course">
-                      <SelectValue placeholder="Select a course (optional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CN115">CN115</SelectItem>
-                      <SelectItem value="CN125">CN125</SelectItem>
-                      <SelectItem value="CN126">CN126</SelectItem>
-                      <SelectItem value="CN127">CN127</SelectItem>
-                      <SelectItem value="CN128">CN128</SelectItem>
-                      <SelectItem value="CN135">CN135</SelectItem>
-                      <SelectItem value="CN235">CN235</SelectItem>
-                      <SelectItem value="CN321">CN321</SelectItem>
-                      <SelectItem value="CN322">CN322</SelectItem>
-                      <SelectItem value="CN335">CN335</SelectItem>
-                      <SelectItem value="CN434">CN434</SelectItem>
-                      <SelectItem value="CN455">CN455</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <input type="hidden" name="course" value="" />
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Date & Time</Label>
+                <div className="text-sm text-muted-foreground">
+                  {selectedSlot?.date && formatDateKey(selectedSlot.date)} at {selectedSlot?.time}
                 </div>
               </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsBookingModalOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit">
-                  Confirm Booking
-                </Button>
-              </DialogFooter>
-            </form>
+              {userData?.class_name && (
+                <div className="grid gap-2">
+                  <Label>Class</Label>
+                  <div className="text-sm text-muted-foreground">
+                    {userData.class_name}
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsBookingModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button onClick={confirmBooking}>
+                Confirm Booking
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

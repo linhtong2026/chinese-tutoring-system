@@ -21,7 +21,7 @@ def book_session():
     availability_id = data.get("availability_id")
     start_time_str = data.get("start_time")
     end_time_str = data.get("end_time")
-    course = data.get("course")
+    course = current_user.class_name
 
     if not availability_id or not start_time_str or not end_time_str:
         return (

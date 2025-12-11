@@ -908,8 +908,7 @@ class TestSessionHTTPEndpoints:
                             data=json.dumps({
                                 'availability_id': av.id,
                                 'start_time': '2025-01-06T10:00:00',
-                                'end_time': '2025-01-06T11:00:00',
-                                'course': 'Chinese 101'
+                                'end_time': '2025-01-06T11:00:00'
                             }),
                             content_type='application/json',
                             headers={'Authorization': 'Bearer test_token'})
@@ -2573,8 +2572,7 @@ class TestSessionHTTPEndpoints:
                             data=json.dumps({
                                 'availability_id': av.id,
                                 'start_time': '2025-01-07T10:00:00',
-                                'end_time': '2025-01-07T11:00:00',
-                                'course': 'Chinese 101'
+                                'end_time': '2025-01-07T11:00:00'
                             }),
                             content_type='application/json',
                             headers={'Authorization': 'Bearer test_token'})
@@ -2610,8 +2608,7 @@ class TestSessionHTTPEndpoints:
                                 data=json.dumps({
                                     'availability_id': av.id,
                                     'start_time': '2025-01-06T11:00:00',
-                                    'end_time': '2025-01-06T12:00:00',
-                                    'course': 'Chinese 101'
+                                    'end_time': '2025-01-06T12:00:00'
                                 }),
                                 content_type='application/json',
                                 headers={'Authorization': 'Bearer test_token'})
